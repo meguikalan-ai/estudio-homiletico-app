@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "Sermon": {
+      "title": "Sermon",
+      "description": "Represents an expository sermon in the pastoral library, synchronized across devices.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "theme": { "type": "string" },
+        "scripture": { "type": "string" },
+        "introduction": { "type": "string" },
+        "biblicalContext": { "type": "string" },
+        "conclusion": { "type": "string" },
+        "pastoralAppeal": { "type": "string" },
+        "date": { "type": "string" },
+        "style": { "type": "string" },
+        "churchProfile": { "type": "string" },
+        "audience": { "type": "string" },
+        "bibleVersion": { "type": "string" },
+        "isOutline": { "type": "boolean" },
+        "duration": { "type": "string" },
+        "isFavorite": { "type": "boolean" },
+        "isArchived": { "type": "boolean" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "title", "scripture"]
+    },
+    "ExpositorySeries": {
+      "title": "ExpositorySeries",
+      "description": "Represents a thematic or expository sermon series.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "book": { "type": "string" },
+        "theme": { "type": "string" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "title"]
+    },
+    "Tombstone": {
+      "title": "Tombstone",
+      "description": "Tracks deleted sermons across devices to prevent resurrected items.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "deletedAt": { "type": "number" }
+      },
+      "required": ["id", "deletedAt"]
+    }
+  },
+  "firestore": {
+    "/pastoral_sermons/{sermonId}": {
+      "schema": "Sermon",
+      "description": "Primary pastoral sermons collection synchronized across desktop and mobile in real-time."
+    },
+    "/sermons/{sermonId}": {
+      "schema": "Sermon",
+      "description": "Unified pastoral sermons collection synchronized in real-time."
+    },
+    "/series/{seriesId}": {
+      "schema": "ExpositorySeries",
+      "description": "Expository series collection synchronized in real-time."
+    },
+    "/tombstones/{tombstoneId}": {
+      "schema": "Tombstone",
+      "description": "Deleted items tombstone collection for multi-device sync integrity."
+    }
+  }
+}

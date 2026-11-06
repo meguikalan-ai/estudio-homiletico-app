@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="108" fill="#2D2926"/>
+  <rect x="24" y="24" width="464" height="464" rx="84" fill="none" stroke="#5A5A40" stroke-width="4" opacity="0.4"/>
+  <!-- Open Book & Pulpit Cross -->
+  <g transform="translate(96, 110) scale(0.625)" fill="none" stroke="#E6E2DA" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Cross -->
+    <path d="M256 60 V340" stroke="#C8B27A" stroke-width="26"/>
+    <path d="M170 140 H342" stroke="#C8B27A" stroke-width="26"/>
+    <!-- Open Book Pages -->
+    <path d="M40 380 Q 148 340, 256 370 Q 364 340, 472 380 L 472 450 Q 364 410, 256 440 Q 148 410, 40 450 Z" fill="#3D3834" stroke="#E6E2DA" stroke-width="14"/>
+    <path d="M256 370 V440" stroke="#E6E2DA" stroke-width="14"/>
+    <!-- Radiance / Light beams -->
+    <path d="M160 50 L140 30" stroke="#C8B27A" stroke-width="14"/>
+    <path d="M352 50 L372 30" stroke="#C8B27A" stroke-width="14"/>
+    <path d="M256 20 V0" stroke="#C8B27A" stroke-width="14"/>
+  </g>
+</svg>

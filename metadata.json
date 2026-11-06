@@ -1,0 +1,6 @@
+{
+  "name": "Estúdio Homilético",
+  "description": "Assistente Pastoral inteligente voltado para pregadores batistas para preparação expositiva, mensagens evangelísticas e organização ministerial.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

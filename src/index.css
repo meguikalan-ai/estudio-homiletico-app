@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-classic-heading: "Playfair Display", "Georgia", serif;
+  --font-serif-serif: "Georgia", "Times New Roman", serif;
+}
+
+@layer utilities {
+  .printable-content {
+    display: none !important;
+  }
+
+  @media print {
+    .printable-content {
+      display: block !important;
+    }
+
+    /* Set up strict white background layout for physical paper print */
+    html, body {
+      background: #FFFFFF !important;
+      color: #000000 !important;
+      font-family: "Georgia", "Times New Roman", serif !important;
+      font-size: 13pt !important;
+      line-height: 1.50 !important;
+      margin: 1.2cm !important;
+      padding: 0 !important;
+    }
+
+    /* Hide completely any background sidebars, helper grids, and buttons */
+    aside, 
+    nav, 
+    button, 
+    footer, 
+    .non-printable,
+    .upper-baptist-heritage-bar,
+    .lg\:col-span-4,
+    [role="tablist"],
+    .fixed.inset-0.z-50 {
+      display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      width: 0 !important;
+      overflow: hidden !important;
+    }
+
+    /* Force full-width presentation of editorial contents */
+    .max-w-3xl,
+    .lg\:col-span-8,
+    .grid,
+    .flex-1 {
+      width: 100% !important;
+      max-width: 100% !important;
+      float: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      display: block !important;
+      box-shadow: none !important;
+      border: none !important;
+    }
+
+    /* Style titles, scripture context headers, and text areas nicely */
+    .text-center {
+      text-align: center !important;
+      margin-top: 0.5rem !important;
+      margin-bottom: 1.5rem !important;
+    }
+
+    input, textarea {
+      border: none !important;
+      outline: none !important;
+      background: transparent !important;
+      width: 100% !important;
+      font-family: "Georgia", "Times New Roman", serif !important;
+      color: #000000 !important;
+      resize: none !important;
+      overflow: visible !important;
+    }
+
+    /* Add smart homiletical spacing for points and applications */
+    section {
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+      margin-top: 1.2rem !important;
+      margin-bottom: 1.2rem !important;
+      padding-bottom: 0.8rem !important;
+      border-bottom: 1px dashed #CCCCCC !important;
+    }
+
+    /* Render heading hierarchy cleanly */
+    h1, h2, h3, h4 {
+      font-family: "Georgia", "Times New Roman", serif !important;
+      color: #000000 !important;
+      page-break-after: avoid !important;
+      break-after: avoid !important;
+    }
+
+    h1 {
+      font-size: 20pt !important;
+      font-weight: bold !important;
+      margin-bottom: 0.5rem !important;
+    }
+
+    h3 {
+      font-size: 13pt !important;
+      font-weight: bold !important;
+      text-transform: uppercase !important;
+      border-bottom: 1px solid #000000 !important;
+      padding-bottom: 3px !important;
+      margin-bottom: 0.6rem !important;
+    }
+
+    h4 {
+      font-size: 13pt !important;
+      font-weight: bold !important;
+      margin-bottom: 0.4rem !important;
+    }
+
+    p, span, li, div {
+      font-size: 13pt !important;
+      color: #000000 !important;
+    }
+  }
+}

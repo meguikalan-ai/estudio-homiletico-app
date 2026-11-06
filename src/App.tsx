@@ -8,8 +8,6 @@ import {
   History, Pencil, Cloud, CloudOff, RefreshCw, UploadCloud, FolderOpen, Feather,
   Palette, Scale, Smartphone, Laptop, FileDown, FileUp, ArrowRightLeft, ShieldCheck, Database,
   ExternalLink,
-  Mail,
-  Lock,
   X
 } from 'lucide-react';
 import { 
@@ -18,11 +16,6 @@ import {
   auth,
   googleProvider,
   signInWithPopup,
-  signInWithRedirect,
-  getRedirectResult,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  sendPasswordResetEmail,
   signOut,
   onAuthStateChanged,
   type User,
@@ -83,14 +76,9 @@ export default function App() {
   const [showSyncDiagnosticsModal, setShowSyncDiagnosticsModal] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<User | null>(() => auth?.currentUser || null);
   const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
-  const [bypassLoginScreen, setBypassLoginScreen] = useState<boolean>(false);
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [domainCopied, setDomainCopied] = useState<boolean>(false);
-  const [authTab, setAuthTab] = useState<'google' | 'email'>('google');
-  const [emailInput, setEmailInput] = useState<string>('jfernandoveiga1967@gmail.com');
-  const [passwordInput, setPasswordInput] = useState<string>('');
-  const [isSignUpMode, setIsSignUpMode] = useState<boolean>(false);
   const [isCloudSyncing, setIsCloudSyncing] = useState<boolean>(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'error'>('synced');
   const [cloudSyncMessage, setCloudSyncMessage] = useState<string>('Espelhamento em tempo real ativo');
@@ -226,23 +214,6 @@ export default function App() {
     const authTimeoutTimer = setTimeout(() => {
       if (isMounted) setIsAuthChecking(false);
     }, 2500);
-
-    // Tratar resultado de redirecionamento no mobile/PWA se aplicável
-    if (auth) {
-      getRedirectResult(auth).then(async (result) => {
-        if (result?.user && isMounted) {
-          await initForUser(result.user);
-          if (isMounted) setIsAuthChecking(false);
-        }
-      }).catch((err: any) => {
-        if (err?.code === 'auth/unauthorized-domain') {
-          // Domínio ainda não está na lista de autorizados do Firebase
-          console.warn("Firebase Auth: Domínio atual aguardando autorização no Firebase Console.");
-        } else {
-          console.warn("Resultado de redirecionamento:", err);
-        }
-      });
-    }
 
     // Ouvinte de Autenticação Firebase com persistência
     const unsubAuth = auth ? onAuthStateChanged(auth, async (user) => {
@@ -386,7 +357,6 @@ export default function App() {
     try {
       const cred = await signInWithPopup(auth, googleProvider);
       setCurrentUser(cred.user);
-      setBypassLoginScreen(false);
       const probe = await testFirestoreConnection(cred.user.uid);
       setFirestoreProbe(probe);
       await handleForceCloudSync(cred.user.uid);
@@ -394,8 +364,12 @@ export default function App() {
         type: 'success',
         text: `Conectado com sucesso como ${cred.user.email || cred.user.uid}! Sincronização ativada.`
       });
-    } catch (popupErr: any) {
-      if (popupErr?.code === 'auth/unauthorized-domain') {
+    } catch (popupErr: unknown) {
+      const pErr = popupErr as { code?: string; message?: string };
+      if (pErr?.code === 'auth/popup-closed-by-user' || pErr?.code === 'auth/cancelled-popup-request') {
+        return;
+      }
+      if (pErr?.code === 'auth/unauthorized-domain') {
         const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'serm-es-e-mensagens.ai.studio';
         const msg = `Firebase: Error (auth/unauthorized-domain). O domínio "${currentHost}" precisa ser adicionado no Firebase Console (Authentication -> Settings -> Authorized domains).`;
         setAuthError(msg);
@@ -406,172 +380,12 @@ export default function App() {
         return;
       }
 
-      // Se falhou por bloqueio de popup ou suporte mobile, tenta signInWithRedirect
-      if (popupErr?.code === 'auth/popup-blocked' || popupErr?.code === 'auth/popup-closed-by-user' || popupErr?.code === 'auth/cancelled-popup-request') {
-        try {
-          await signInWithRedirect(auth, googleProvider);
-          return;
-        } catch (redirectErr: any) {
-          if (redirectErr?.code === 'auth/unauthorized-domain') {
-            const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'serm-es-e-mensagens.ai.studio';
-            const msg = `Firebase: Error (auth/unauthorized-domain). O domínio "${currentHost}" precisa ser adicionado no Firebase Console (Authentication -> Settings -> Authorized domains).`;
-            setAuthError(msg);
-            setSyncActionMessage({
-              type: 'error',
-              text: msg
-            });
-          } else {
-            console.warn("Erro no redirecionamento Google:", redirectErr);
-            const msg = redirectErr?.message || String(redirectErr);
-            setAuthError(msg);
-            setSyncActionMessage({
-              type: 'error',
-              text: `Falha na autenticação: ${msg}`
-            });
-          }
-        }
-      } else {
-        const msg = popupErr?.message || String(popupErr);
-        setAuthError(msg);
-        setSyncActionMessage({
-          type: 'error',
-          text: `Falha na autenticação: ${msg}`
-        });
-      }
-    } finally {
-      setIsAuthLoading(false);
-    }
-  };
-
-  const handleResetPasswordEmail = async () => {
-    if (!auth) {
-      setAuthError("Firebase Auth não está inicializado.");
-      return;
-    }
-    const cleanEmail = emailInput.trim();
-    if (!cleanEmail) {
-      setAuthError("Por favor, preencha o campo de e-mail pastoral para receber o link de redefinição.");
-      return;
-    }
-    setIsAuthLoading(true);
-    setAuthError(null);
-    try {
-      await sendPasswordResetEmail(auth, cleanEmail);
-      setSyncActionMessage({
-        type: 'success',
-        text: `Enviamos as instruções de redefinição de senha para ${cleanEmail}! Verifique sua caixa de entrada e a pasta de spam.`
-      });
-      setAuthError(null);
-    } catch (resetErr: unknown) {
-      const err = resetErr as { code?: string; message?: string };
-      console.warn("Aviso ao solicitar redefinição de senha:", resetErr);
-      let msg = "Não foi possível enviar o e-mail de redefinição de senha.";
-      if (err.code === 'auth/invalid-email') {
-        msg = "E-mail inválido. Por favor, verifique a digitação.";
-      } else if (err.code === 'auth/user-not-found') {
-        msg = "Nenhum cadastro encontrado com este e-mail pastoral. Você pode criar uma nova conta.";
-      } else if (err.code === 'auth/too-many-requests') {
-        msg = "Muitas tentativas em sequência. Por favor, aguarde alguns instantes antes de tentar novamente.";
-      }
+      console.warn("Aviso ao conectar com Google:", popupErr);
+      const msg = pErr?.message || String(popupErr);
       setAuthError(msg);
       setSyncActionMessage({
         type: 'error',
-        text: msg
-      });
-    } finally {
-      setIsAuthLoading(false);
-    }
-  };
-
-  const handleSignInEmail = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!auth) {
-      setAuthError("Firebase Auth não está inicializado.");
-      return;
-    }
-    const cleanEmail = emailInput.trim();
-    if (!cleanEmail || !passwordInput) {
-      setAuthError("Por favor, preencha o e-mail e a senha pastoral.");
-      return;
-    }
-    setIsAuthLoading(true);
-    setAuthError(null);
-    try {
-      let cred;
-      if (isSignUpMode) {
-        cred = await createUserWithEmailAndPassword(auth, cleanEmail, passwordInput);
-      } else {
-        try {
-          cred = await signInWithEmailAndPassword(auth, cleanEmail, passwordInput);
-        } catch (signInErr: unknown) {
-          const sErr = signInErr as { code?: string; message?: string };
-          // Se o usuário ainda não foi criado com este e-mail/senha, tenta criar automaticamente
-          if (sErr?.code === 'auth/user-not-found' || sErr?.code === 'auth/invalid-credential') {
-            try {
-              cred = await createUserWithEmailAndPassword(auth, cleanEmail, passwordInput);
-            } catch (createErr: unknown) {
-              const cErr = createErr as { code?: string; message?: string };
-              if (cErr?.code === 'auth/email-already-in-use') {
-                // A conta já existe; portanto, a senha digitada pelo usuário está incorreta
-                const passwordMismatchError = new Error(
-                  `Senha incorreta para ${cleanEmail}. Se você costuma entrar com sua conta Google, clique no botão "Entrar com Google" ou use "Esqueci minha senha".`
-                );
-                (passwordMismatchError as unknown as { code: string }).code = 'auth/invalid-credential';
-                throw passwordMismatchError;
-              }
-              if (cErr?.code === 'auth/operation-not-allowed') {
-                const opError = new Error(
-                  "O método de E-mail/Senha não está habilitado no Firebase Console. Utilize a opção 'Entrar com Google' para conectar seus aparelhos."
-                );
-                (opError as unknown as { code: string }).code = 'auth/operation-not-allowed';
-                throw opError;
-              }
-              if (cErr?.code === 'auth/weak-password') {
-                const weakError = new Error("A senha pastoral informada deve possuir no mínimo 6 caracteres.");
-                (weakError as unknown as { code: string }).code = 'auth/weak-password';
-                throw weakError;
-              }
-              throw signInErr;
-            }
-          } else {
-            throw signInErr;
-          }
-        }
-      }
-      setCurrentUser(cred.user);
-      setBypassLoginScreen(false);
-      const probe = await testFirestoreConnection(cred.user.uid);
-      setFirestoreProbe(probe);
-      await handleForceCloudSync(cred.user.uid);
-      setSyncActionMessage({
-        type: 'success',
-        text: `Conectado como ${cred.user.email}! Biblioteca sincronizada com sucesso.`
-      });
-    } catch (err: unknown) {
-      const authErr = err as { code?: string; message?: string };
-      console.warn("Aviso na tentativa de login pastoral:", authErr?.message || authErr);
-      let msg = authErr.message || String(err);
-      if (authErr.code === 'auth/operation-not-allowed') {
-        msg = "O provedor E-mail/Senha não está ativado no Firebase Console. Use 'Entrar com Google' ou ative em Authentication -> Sign-in method -> Email/Password.";
-      } else if (authErr.code === 'auth/invalid-credential') {
-        msg = `E-mail ou senha pastoral incorretos. Se sua conta (${cleanEmail}) foi registrada via Google, use o botão "Entrar com Google" ou redefina sua senha.`;
-      } else if (authErr.code === 'auth/user-not-found') {
-        msg = "Nenhuma conta encontrada com este e-mail. Marque 'Criar nova conta' abaixo para se cadastrar.";
-      } else if (authErr.code === 'auth/wrong-password') {
-        msg = "Senha incorreta para este e-mail pastoral. Você pode redefinir sua senha abaixo.";
-      } else if (authErr.code === 'auth/weak-password') {
-        msg = "A senha deve ter no mínimo 6 caracteres.";
-      } else if (authErr.code === 'auth/invalid-email') {
-        msg = "E-mail inválido. Por favor, verifique a digitação.";
-      } else if (authErr.code === 'auth/email-already-in-use') {
-        msg = "Este e-mail já possui cadastro. Desmarque a opção 'Criar nova conta' para fazer login com sua senha existente.";
-      } else if (authErr.code === 'auth/too-many-requests') {
-        msg = "Muitas tentativas sem sucesso. Por segurança, aguarde alguns instantes ou solicite redefinição de senha.";
-      }
-      setAuthError(msg);
-      setSyncActionMessage({
-        type: 'error',
-        text: `Atenção: ${msg}`
+        text: `Falha na autenticação: ${msg}`
       });
     } finally {
       setIsAuthLoading(false);
@@ -584,7 +398,6 @@ export default function App() {
     try {
       await signOut(auth);
       setCurrentUser(null);
-      setBypassLoginScreen(false);
       const probe = await testFirestoreConnection();
       setFirestoreProbe(probe);
       setCloudSyncStatus('offline');
@@ -2347,8 +2160,8 @@ ${activeSermon.pastoralAppeal}
     );
   }
 
-  // 1) Tela de Entrada quando não houver usuário logado
-  if (!currentUser && !bypassLoginScreen) {
+  // 1) Tela de Entrada quando não houver usuário logado (Apenas Google)
+  if (!currentUser) {
     return (
       <div className="min-h-screen bg-[#F5F2ED] text-[#2D2926] flex flex-col font-sans selection:bg-[#5A5A40]/30">
         <header className="bg-[#2D2926] text-[#E6E2DA] px-4 py-2.5 text-xs flex justify-between items-center border-b border-[#5A5A40]/20">
@@ -2370,40 +2183,9 @@ ${activeSermon.pastoralAppeal}
               <h1 className="font-serif font-bold text-2xl text-gray-900 tracking-tight pt-1">
                 Estúdio Homilético
               </h1>
-              <p className="text-[11px] font-bold tracking-widest uppercase text-gray-500">
-                PR. FERNANDO VEIGA — ACERVO PASTORAL
+              <p className="text-xs text-gray-600 leading-relaxed pt-1">
+                Sua Biblioteca de Sermões sincronizada em tempo real entre celular e computadores.
               </p>
-              <p className="text-xs text-gray-600 leading-relaxed pt-2">
-                Para que toda a sua Biblioteca de Sermões fique sincronizada em tempo real entre celular, tablet e computador, conecte com a sua Conta Google.
-              </p>
-            </div>
-
-            {/* Auth Method Tabs */}
-            <div className="flex bg-[#EFECE6] p-1 rounded-2xl border border-[#E6E2DA]">
-              <button
-                type="button"
-                onClick={() => { setAuthTab('google'); setAuthError(null); }}
-                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  authTab === 'google'
-                    ? 'bg-white text-[#2D2926] shadow-xs'
-                    : 'text-gray-500 hover:text-gray-900'
-                }`}
-              >
-                <Cloud className="w-3.5 h-3.5 text-[#5A5A40]" />
-                <span>Conta Google</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAuthTab('email'); setAuthError(null); }}
-                className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  authTab === 'email'
-                    ? 'bg-white text-[#2D2926] shadow-xs'
-                    : 'text-gray-500 hover:text-gray-900'
-                }`}
-              >
-                <Mail className="w-3.5 h-3.5 text-[#5A5A40]" />
-                <span>E-mail & Senha</span>
-              </button>
             </div>
 
             {authError && (
@@ -2468,188 +2250,43 @@ ${activeSermon.pastoralAppeal}
                           Volte aqui e clique novamente no botão <strong>Entrar com Google</strong>.
                         </li>
                       </ol>
-
-                      <div className="mt-2 pt-2 border-t border-gray-100 bg-amber-50/70 p-2 rounded-lg text-amber-900 text-[10px]">
-                        💡 <strong>Alternativa Imediata:</strong> Você também pode usar a aba <strong>E-mail & Senha</strong> acima para entrar agora mesmo sem precisar mexer no console!
-                      </div>
                     </div>
                   </>
                 ) : (
-                  <div className="space-y-2">
-                    <p className="text-[11px] font-sans text-red-900 leading-relaxed font-medium">{authError}</p>
-                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-red-200/60">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAuthTab('google');
-                          setAuthError(null);
-                        }}
-                        className="px-2.5 py-1 bg-[#5A5A40] text-white hover:bg-[#2D2926] rounded-lg text-[11px] font-bold cursor-pointer transition-colors shadow-2xs"
-                      >
-                        Entrar com Google
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleResetPasswordEmail}
-                        disabled={isAuthLoading || !emailInput.trim()}
-                        className="px-2.5 py-1 bg-white border border-red-300 text-red-900 hover:bg-red-50 rounded-lg text-[11px] font-semibold cursor-pointer transition-colors disabled:opacity-40"
-                      >
-                        Redefinir Senha
-                      </button>
-                      {!isSignUpMode && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsSignUpMode(true);
-                            setAuthError(null);
-                          }}
-                          className="px-2.5 py-1 text-gray-700 hover:text-black hover:underline text-[11px] cursor-pointer"
-                        >
-                          Criar nova conta
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                  <p className="text-[11px] font-mono leading-relaxed break-all">{authError}</p>
                 )}
               </div>
             )}
 
-            {/* TAB 1: GOOGLE */}
-            {authTab === 'google' && (
-              <div className="space-y-3.5">
-                <button
-                  type="button"
-                  onClick={handleSignInGoogle}
-                  disabled={isAuthLoading}
-                  className="w-full py-4 px-5 rounded-2xl font-bold text-base text-white bg-[#5A5A40] hover:bg-[#2D2926] shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50"
-                >
-                  {isAuthLoading ? (
-                    <>
-                      <RefreshCw className="w-5 h-5 animate-spin" />
-                      <span>Conectando com o Google...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Cloud className="w-5 h-5" />
-                      <span>Entrar com Google</span>
-                    </>
-                  )}
-                </button>
-
-                <div className="bg-stone-50 border border-stone-200/80 rounded-xl p-3.5 space-y-2 text-[11px] text-stone-600">
-                  <div className="flex items-center gap-1.5 text-stone-900 font-semibold">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Sessão persistente entre aberturas</span>
-                  </div>
-                  <p className="leading-relaxed">
-                    Você entra apenas uma vez. Todos os seus aparelhos compartilham o mesmo acervo centralizado em nuvem (<code className="bg-stone-200/60 px-1 py-0.5 rounded font-mono text-[10px]">users/{'{uid}'}/sermons</code>).
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 2: EMAIL E SENHA */}
-            {authTab === 'email' && (
-              <form onSubmit={handleSignInEmail} className="space-y-3.5">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-gray-700 uppercase tracking-wider block">
-                    E-mail Pastoral:
-                  </label>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-gray-400 absolute left-3 top-3 pointer-events-none" />
-                    <input
-                      type="email"
-                      required
-                      value={emailInput}
-                      onChange={(e) => setEmailInput(e.target.value)}
-                      placeholder="seu-email@gmail.com"
-                      className="w-full bg-white border border-[#E6E2DA] rounded-xl pl-9 pr-3 py-2.5 text-xs text-gray-900 focus:outline-hidden focus:border-[#5A5A40] focus:ring-1 focus:ring-[#5A5A40]"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-bold text-gray-700 uppercase tracking-wider block">
-                      Senha Pastoral:
-                    </label>
-                    <button
-                      type="button"
-                      onClick={handleResetPasswordEmail}
-                      disabled={isAuthLoading}
-                      className="text-[11px] text-[#5A5A40] hover:text-[#2D2926] underline cursor-pointer"
-                    >
-                      Esqueci minha senha
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-gray-400 absolute left-3 top-3 pointer-events-none" />
-                    <input
-                      type="password"
-                      required
-                      value={passwordInput}
-                      onChange={(e) => setPasswordInput(e.target.value)}
-                      placeholder="Mínimo de 6 caracteres"
-                      className="w-full bg-white border border-[#E6E2DA] rounded-xl pl-9 pr-3 py-2.5 text-xs text-gray-900 focus:outline-hidden focus:border-[#5A5A40] focus:ring-1 focus:ring-[#5A5A40]"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between text-xs pt-0.5">
-                  <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-gray-600">
-                    <input
-                      type="checkbox"
-                      checked={isSignUpMode}
-                      onChange={(e) => setIsSignUpMode(e.target.checked)}
-                      className="rounded border-gray-300 text-[#5A5A40] focus:ring-[#5A5A40]"
-                    />
-                    <span>Criar nova conta com este e-mail</span>
-                  </label>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAuthTab('google');
-                      setAuthError(null);
-                    }}
-                    className="text-[11px] text-[#5A5A40] font-semibold hover:underline"
-                  >
-                    Ou entrar com Google →
-                  </button>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isAuthLoading}
-                  className="w-full py-3.5 px-4 rounded-xl font-bold text-sm text-white bg-[#5A5A40] hover:bg-[#2D2926] shadow-sm hover:shadow transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
-                >
-                  {isAuthLoading ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Processando acesso...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>{isSignUpMode ? 'Cadastrar e Conectar' : 'Acessar Biblioteca Pastoral'}</span>
-                    </>
-                  )}
-                </button>
-
-                <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-xl p-3 text-[11px] text-emerald-900 leading-relaxed">
-                  ✓ <strong>Acesso Direto Sem Restrição de Domínio:</strong> Funciona instantaneamente no celular, tablet e computador, conectando diretamente com a nuvem Firestore.
-                </div>
-              </form>
-            )}
-
-            <div className="text-center pt-2 border-t border-[#E6E2DA]">
+            <div className="space-y-3.5">
               <button
                 type="button"
-                onClick={() => setBypassLoginScreen(true)}
-                className="text-xs text-gray-500 hover:text-gray-800 underline cursor-pointer"
+                onClick={handleSignInGoogle}
+                disabled={isAuthLoading}
+                className="w-full py-4 px-5 rounded-2xl font-bold text-base text-white bg-[#5A5A40] hover:bg-[#2D2926] shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50"
               >
-                Continuar sem login (Modo local neste aparelho)
+                {isAuthLoading ? (
+                  <>
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                    <span>Conectando com o Google...</span>
+                  </>
+                ) : (
+                  <>
+                    <Cloud className="w-5 h-5" />
+                    <span>Entrar com Google</span>
+                  </>
+                )}
               </button>
+
+              <div className="bg-stone-50 border border-stone-200/80 rounded-xl p-3.5 space-y-2 text-[11px] text-stone-600 text-center">
+                <div className="flex items-center justify-center gap-1.5 text-stone-900 font-semibold">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Sessão persistente entre aberturas</span>
+                </div>
+                <p className="leading-relaxed">
+                  Você entra apenas uma vez. Todos os seus aparelhos compartilham o mesmo acervo centralizado em nuvem.
+                </p>
+              </div>
             </div>
 
           </div>
@@ -5327,20 +4964,6 @@ ${activeSermon.pastoralAppeal}
                       <Cloud className="w-5 h-5" />
                       <span>{isAuthLoading ? 'Conectando...' : 'Entrar com Google'}</span>
                     </button>
-
-                    <div className="pt-2 border-t border-[#E6E2DA] text-center">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowSyncDiagnosticsModal(false);
-                          setBypassLoginScreen(false);
-                          setAuthTab('email');
-                        }}
-                        className="text-xs font-semibold text-[#5A5A40] hover:underline cursor-pointer"
-                      >
-                        Ou entrar com E-mail & Senha Pastoral (sem restrição de domínio) →
-                      </button>
-                    </div>
                   </div>
                 ) : (
                   <div className="bg-[#FAF8F5] border border-[#E6E2DA] rounded-xl p-4 space-y-3">

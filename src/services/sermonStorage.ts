@@ -1,6 +1,5 @@
 import { 
   db, 
-  auth,
   collection, 
   doc, 
   setDoc, 
@@ -40,12 +39,16 @@ export function setLastFirestoreError(err: string | null): void {
 }
 
 /**
- * Retorna o UID efetivo do usuário autenticado para armazenamento em users/{uid}/...
+ * UID fixo único do pastor para sincronização direta sem autenticação
  */
-export function getEffectiveUid(overrideUid?: string): string | null {
+export const FIXED_PASTORAL_UID = '2PG5uxWMgeg3eE10yQbQVFDpHUu1';
+
+/**
+ * Retorna o UID efetivo do pastor para armazenamento em users/{uid}/...
+ */
+export function getEffectiveUid(overrideUid?: string): string {
   if (overrideUid && overrideUid.trim()) return overrideUid.trim();
-  if (auth?.currentUser?.uid) return auth.currentUser.uid;
-  return null;
+  return FIXED_PASTORAL_UID;
 }
 
 export interface SyncLogEntry {
@@ -474,7 +477,7 @@ export async function testFirestoreConnection(overrideUid?: string): Promise<{
   error?: string;
 }> {
   const uid = getEffectiveUid(overrideUid);
-  const userEmail = auth?.currentUser?.email || null;
+  const userEmail = "meguikalan@gmail.com";
   const result = {
     connected: false,
     latencyMs: 0,

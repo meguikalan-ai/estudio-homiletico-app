@@ -1,21 +1,5 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { 
-  getAuth, 
-  GoogleAuthProvider, 
-  signInWithPopup, 
-  signInWithRedirect,
-  getRedirectResult,
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  signOut, 
-  onAuthStateChanged,
-  sendPasswordResetEmail,
-  browserLocalPersistence,
-  setPersistence,
-  User,
-  Auth
-} from 'firebase/auth';
-import { 
   getFirestore, 
   Firestore, 
   collection, 
@@ -27,7 +11,7 @@ import {
   query, 
   where, 
   orderBy, 
-  onSnapshot,
+  onSnapshot, 
   writeBatch,
   Unsubscribe,
   DocumentReference,
@@ -56,22 +40,11 @@ export const isFirebaseConfigured = Boolean(
 );
 
 let app: FirebaseApp | null = null;
-let authInstance: Auth | null = null;
 let dbInstance: Firestore | null = null;
 
 if (isFirebaseConfigured) {
   try {
     app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-    try {
-      authInstance = getAuth(app);
-      // Garantir persistência de sessão entre aberturas no navegador, celular e PWA
-      setPersistence(authInstance, browserLocalPersistence).catch((err) => {
-        console.warn("Aviso ao definir persistência local do Firebase Auth:", err);
-      });
-    } catch (authErr) {
-      console.warn("Firebase Auth não pôde ser inicializado:", authErr);
-      authInstance = null;
-    }
 
     try {
       // Initialize Firestore using default or specific database ID
@@ -88,27 +61,15 @@ if (isFirebaseConfigured) {
   } catch (error) {
     console.error("Erro na inicialização do Firebase App:", error);
     app = null;
-    authInstance = null;
     dbInstance = null;
   }
 }
 
-export const auth = authInstance;
 export const db = dbInstance;
-export const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({ prompt: 'select_account' });
 export const firestoreDatabaseId = firebaseConfigJson.firestoreDatabaseId || "(default)";
 export const firebaseProjectId = firebaseConfigJson.projectId || "";
 
 export {
-  signInWithPopup,
-  signInWithRedirect,
-  getRedirectResult,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged,
-  sendPasswordResetEmail,
   collection,
   doc,
   setDoc,
@@ -122,5 +83,5 @@ export {
   writeBatch
 };
 
-export type { User, Firestore, Unsubscribe, DocumentReference, DocumentData, QuerySnapshot };
+export type { Firestore, Unsubscribe, DocumentReference, DocumentData, QuerySnapshot };
 

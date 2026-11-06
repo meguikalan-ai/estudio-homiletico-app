@@ -1,51 +1,47 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Isolamento por usuário: cada usuário lê e escreve exclusivamente os próprios dados
+    // Acesso para o UID fixo pastoral (sem necessidade de login) ou via autenticação
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
 
       match /pastoral_sermons/{sermonId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
       }
 
       match /sermons/{sermonId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
       }
 
       match /series/{seriesId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
       }
 
       match /illustrations/{illustrationId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
       }
 
       match /tombstones/{tombstoneId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
       }
 
       match /{document=**} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
       }
     }
 
-    // Coleção direta pastoral_sermons com verificação de posse do usuário
+    // Coleção direta pastoral_sermons com verificação do UID pastoral
     match /pastoral_sermons/{sermonId} {
-      allow read: if request.auth != null && (resource == null || resource.data.userId == request.auth.uid);
-      allow create, update: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow delete: if request.auth != null && (resource == null || resource.data.userId == request.auth.uid);
+      allow read, write: if resource == null || resource.data.userId == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || request.resource.data.userId == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1');
     }
 
     // Coleção direta sermons para compatibilidade regressiva
     match /sermons/{sermonId} {
-      allow read: if request.auth != null && (resource == null || resource.data.userId == request.auth.uid);
-      allow create, update: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow delete: if request.auth != null && (resource == null || resource.data.userId == request.auth.uid);
+      allow read, write: if resource == null || resource.data.userId == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || request.resource.data.userId == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1');
     }
 
     match /tombstones/{tombstoneId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if true;
     }
   }
 }

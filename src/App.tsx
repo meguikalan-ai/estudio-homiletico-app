@@ -7,18 +7,11 @@ import {
   ShieldAlert, Sparkle, BookOpenCheck, Volume2, Eye, EyeOff, Layers,
   History, Pencil, Cloud, CloudOff, RefreshCw, UploadCloud, FolderOpen, Feather,
   Palette, Scale, Smartphone, Laptop, FileDown, FileUp, ArrowRightLeft, ShieldCheck, Database,
-  ExternalLink,
   X
 } from 'lucide-react';
 import { 
   isFirebaseConfigured, 
   db, 
-  auth,
-  googleProvider,
-  signInWithPopup,
-  signOut,
-  onAuthStateChanged,
-  type User,
   firestoreDatabaseId, 
   firebaseProjectId 
 } from './firebase';
@@ -60,7 +53,8 @@ import {
   purgeBlankSermonsFromStorage,
   purgeModelSermonsFromStorage,
   isModelSermon,
-  getLastFirestoreError
+  getLastFirestoreError,
+  FIXED_PASTORAL_UID
 } from './services/sermonStorage';
 import { 
   createSyncCode, 
@@ -74,11 +68,6 @@ import {
 
 export default function App() {
   const [showSyncDiagnosticsModal, setShowSyncDiagnosticsModal] = useState<boolean>(false);
-  const [currentUser, setCurrentUser] = useState<User | null>(() => auth?.currentUser || null);
-  const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
-  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(false);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [domainCopied, setDomainCopied] = useState<boolean>(false);
   const [isCloudSyncing, setIsCloudSyncing] = useState<boolean>(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'error'>('synced');
   const [cloudSyncMessage, setCloudSyncMessage] = useState<string>('Espelhamento em tempo real ativo');
@@ -97,7 +86,7 @@ export default function App() {
   const [isTestingProbe, setIsTestingProbe] = useState<boolean>(false);
   const isRemoteSyncUpdateRef = useRef<boolean>(false);
 
-  // 1. Ouvinte Firestore e Auth em Tempo Real para espelhamento automático contínuo
+  // 1. Ouvinte Firestore em Tempo Real para espelhamento automático contínuo com o UID fixo do pastor
   useEffect(() => {
     let isMounted = true;
     let unsubscribeSermons: (() => void) | null = null;
@@ -108,133 +97,72 @@ export default function App() {
       if (isMounted) setSyncLogs(logs);
     });
 
-    const initForUser = async (user: User | null) => {
-      if (!isMounted) return;
-      setCurrentUser(user);
+    setIsCloudSyncing(true);
+    setCloudSyncStatus('syncing');
+    setCloudSyncMessage('Conectando ao acervo na nuvem...');
 
-      if (!user) {
+    // Conectar IMEDIATAMENTE os ouvintes em tempo real com o UID fixo do pastor
+    unsubscribeSermons = subscribeToUserSermons(
+      FIXED_PASTORAL_UID,
+      (cloudSermons) => {
+        if (!isMounted) return;
+        setLastSyncTime(new Date());
+
+        // Smart Merge: reconcilia o que veio da nuvem com o estado local preservando o trabalho mais recente
+        setSermons((prevLocal) => {
+          const merged = smartMergeSermons(prevLocal, cloudSermons);
+          if (areSermonListsEqual(prevLocal, merged)) {
+            return prevLocal;
+          }
+          isRemoteSyncUpdateRef.current = true;
+          try {
+            localStorage.setItem('pastoral_sermons', JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+
+        setCloudSyncStatus('synced');
+        setCloudSyncMessage(`Espelhado em tempo real (${cloudSermons.length} sermões)`);
         setIsCloudSyncing(false);
-        setCloudSyncStatus('offline');
-        setCloudSyncMessage('Aguardando login de usuário');
-        try {
-          await purgeModelSermonsFromStorage();
-          setSermons(prev => {
-            const cleaned = prev.filter(s => s && !isModelSermon(s));
-            if (cleaned.length !== prev.length) {
-              localStorage.setItem('pastoral_sermons', JSON.stringify(cleaned));
-              return cleaned;
-            }
-            return prev;
-          });
-        } catch {}
-        const probe = await testFirestoreConnection();
-        if (isMounted) setFirestoreProbe(probe);
-        return;
-      }
-
-      setIsCloudSyncing(true);
-      setCloudSyncStatus('syncing');
-      setCloudSyncMessage(`Conectado como ${user.email || user.uid}...`);
-
-      // 1. Limpar ouvintes anteriores se houver
-      if (unsubscribeSermons) {
-        try { unsubscribeSermons(); } catch {}
-        unsubscribeSermons = null;
-      }
-      if (unsubscribeSeries) {
-        try { unsubscribeSeries(); } catch {}
-        unsubscribeSeries = null;
-      }
-
-      // 2. Conectar IMEDIATAMENTE os ouvintes em tempo real (0 delay de interface)
-      unsubscribeSermons = subscribeToUserSermons(
-        user.uid,
-        (cloudSermons) => {
-          if (!isMounted) return;
-          setLastSyncTime(new Date());
-
-          // Smart Merge: reconcilia o que veio da nuvem com o estado local preservando o trabalho mais recente
-          setSermons((prevLocal) => {
-            const merged = smartMergeSermons(prevLocal, cloudSermons);
-            if (areSermonListsEqual(prevLocal, merged)) {
-              return prevLocal;
-            }
-            isRemoteSyncUpdateRef.current = true;
-            try {
-              localStorage.setItem('pastoral_sermons', JSON.stringify(merged));
-            } catch {}
-            return merged;
-          });
-
-          setCloudSyncStatus('synced');
-          setCloudSyncMessage(`Espelhado em tempo real (${cloudSermons.length} sermões)`);
-          setIsCloudSyncing(false);
-        },
-        (err) => {
-          console.warn("[Firestore Real-Time Listener]:", err);
-          if (isMounted) {
-            setIsCloudSyncing(false);
-            setCloudSyncStatus('error');
-            setCloudSyncMessage('Falha de permissão ou rede');
-          }
-        }
-      );
-
-      unsubscribeSeries = subscribeToUserSeries((cloudSeriesList) => {
-        if (!isMounted || cloudSeriesList.length === 0) return;
-        setGeneratedSeries(cloudSeriesList[0]);
-      }, user.uid);
-
-      // 3. Em segundo plano e sem bloquear os ouvintes, executa a mesclagem e envio de sermões locais
-      (async () => {
-        try {
-          const initialSync = await performInitialSermonSmartSync(sermons, user.uid);
-          if (isMounted && initialSync.hasRemoteChanges) {
-            isRemoteSyncUpdateRef.current = true;
-            setSermons(initialSync.mergedSermons);
-          }
-          if (isMounted) {
-            setFirestoreProbe({
-              connected: true,
-              latencyMs: 95,
-              cloudSermonCount: initialSync.mergedSermons.length,
-              databaseId: firestoreDatabaseId,
-              projectId: firebaseProjectId,
-              uid: user.uid,
-              userEmail: user.email || null
-            });
-          }
-        } catch (err) {
-          console.warn("Aviso ao carregar séries em nuvem:", err);
-        }
-      })();
-    };
-
-    // Fallback de tempo para não travar o carregamento inicial caso a rede demore
-    const authTimeoutTimer = setTimeout(() => {
-      if (isMounted) setIsAuthChecking(false);
-    }, 2500);
-
-    // Ouvinte de Autenticação Firebase com persistência
-    const unsubAuth = auth ? onAuthStateChanged(auth, async (user) => {
-      // Se for sessão anônima residual, encerra para garantir que todos os aparelhos usem a mesma conta Google
-      if (user && user.isAnonymous) {
-        try { await signOut(auth); } catch {}
+      },
+      (err) => {
+        console.warn("[Firestore Real-Time Listener]:", err);
         if (isMounted) {
-          setCurrentUser(null);
-          setIsAuthChecking(false);
+          setIsCloudSyncing(false);
+          setCloudSyncStatus('error');
+          setCloudSyncMessage('Falha na conexão com Firestore');
         }
-        return;
       }
+    );
 
+    unsubscribeSeries = subscribeToUserSeries((cloudSeriesList) => {
+      if (!isMounted || cloudSeriesList.length === 0) return;
+      setGeneratedSeries(cloudSeriesList[0]);
+    }, FIXED_PASTORAL_UID);
+
+    // Em segundo plano e sem bloquear a interface, executa a mesclagem inicial e telemetria
+    (async () => {
       try {
-        await initForUser(user);
-      } finally {
-        if (isMounted) setIsAuthChecking(false);
+        const initialSync = await performInitialSermonSmartSync(sermons, FIXED_PASTORAL_UID);
+        if (isMounted && initialSync.hasRemoteChanges) {
+          isRemoteSyncUpdateRef.current = true;
+          setSermons(initialSync.mergedSermons);
+        }
+        if (isMounted) {
+          setFirestoreProbe({
+            connected: true,
+            latencyMs: 95,
+            cloudSermonCount: initialSync.mergedSermons.length,
+            databaseId: firestoreDatabaseId,
+            projectId: firebaseProjectId,
+            uid: FIXED_PASTORAL_UID,
+            userEmail: "meguikalan@gmail.com"
+          });
+        }
+      } catch (err) {
+        console.warn("Aviso na sincronização inicial com nuvem:", err);
       }
-    }) : () => {
-      setIsAuthChecking(false);
-    };
+    })();
 
     // Auto-sincronização ao recuperar conexão de rede ou ao retornar para a aba/app no celular
     const handleReconnect = () => {
@@ -254,9 +182,7 @@ export default function App() {
 
     return () => {
       isMounted = false;
-      clearTimeout(authTimeoutTimer);
       unsubLogs();
-      unsubAuth();
       window.removeEventListener('online', handleReconnect);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (unsubscribeSermons) {
@@ -269,77 +195,74 @@ export default function App() {
   }, []);
 
   // Forçar atualização manual da sincronização em nuvem e teste de conexão
-  const handleForceCloudSync = async (targetUid?: string) => {
-    const uid = targetUid || currentUser?.uid;
+  const handleForceCloudSync = async () => {
     setIsCloudSyncing(true);
     setCloudSyncStatus('syncing');
     setCloudSyncMessage('Sincronizando espelhamento na nuvem...');
 
     try {
-      if (uid) {
-        // 1. Sempre recupera os sermões mais recentes do localStorage para não deixar nenhum sermão para trás
-        let localList: Sermon[] = [];
-        const saved = localStorage.getItem('pastoral_sermons');
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed)) {
-              localList = parsed;
-            }
-          } catch {}
-        }
-
-        // 2. Envia e busca em paralelo em alta velocidade (1 único roundtrip)
-        const result = await syncAllLocalSermonsToCloud(localList, uid);
-
-        // 3. Atualiza acervo local imediatamente com os sermões consolidados
-        if (result.cloudSermons && result.cloudSermons.length > 0) {
-          setSermons((prevLocal) => {
-            const merged = smartMergeSermons(prevLocal, result.cloudSermons);
-            isRemoteSyncUpdateRef.current = true;
-            try {
-              localStorage.setItem('pastoral_sermons', JSON.stringify(merged));
-            } catch {}
-            return merged;
-          });
-        }
-
-        // 4. Busca séries expositivas em segundo plano sem bloquear
-        fetchUserSeriesFromCloud(uid).then(cloudSeries => {
-          if (cloudSeries.length > 0 && !generatedSeries) {
-            setGeneratedSeries(cloudSeries[0]);
+      // 1. Sempre recupera os sermões mais recentes do localStorage para não deixar nenhum sermão para trás
+      let localList: Sermon[] = [];
+      const saved = localStorage.getItem('pastoral_sermons');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            localList = parsed;
           }
-        }).catch(console.warn);
+        } catch {}
+      }
 
-        // 5. Atualiza probe de telemetria sem fazer nova requisição redundante
-        setFirestoreProbe({
-          connected: !result.error,
-          latencyMs: 140,
-          cloudSermonCount: result.cloudCount,
-          databaseId: firestoreDatabaseId,
-          projectId: firebaseProjectId,
-          uid,
-          userEmail: currentUser?.email || null,
-          error: result.error
+      // 2. Envia e busca em paralelo em alta velocidade
+      const result = await syncAllLocalSermonsToCloud(localList, FIXED_PASTORAL_UID);
+
+      // 3. Atualiza acervo local imediatamente com os sermões consolidados
+      if (result.cloudSermons && result.cloudSermons.length > 0) {
+        setSermons((prevLocal) => {
+          const merged = smartMergeSermons(prevLocal, result.cloudSermons);
+          isRemoteSyncUpdateRef.current = true;
+          try {
+            localStorage.setItem('pastoral_sermons', JSON.stringify(merged));
+          } catch {}
+          return merged;
         });
+      }
 
-        setLastSyncTime(new Date());
-
-        if (!result.error) {
-          setCloudSyncStatus('synced');
-          setCloudSyncMessage(`Espelhamento 100% atualizado (${result.cloudCount} na nuvem)`);
-          setSyncActionMessage({
-            type: 'success',
-            text: `Sincronização concluída com sucesso! ${result.syncedCount} sermão(ões) salvo(s) na nuvem; ${result.cloudCount} disponíveis na nuvem.`
-          });
-        } else {
-          setCloudSyncStatus('error');
-          setCloudSyncMessage(result.error);
-          setSyncActionMessage({
-            type: 'error',
-            text: `Erro na sincronização: ${result.error}`
-          });
+      // 4. Busca séries expositivas em segundo plano sem bloquear
+      fetchUserSeriesFromCloud(FIXED_PASTORAL_UID).then(cloudSeries => {
+        if (cloudSeries.length > 0 && !generatedSeries) {
+          setGeneratedSeries(cloudSeries[0]);
         }
+      }).catch(console.warn);
+
+      // 5. Atualiza probe de telemetria sem fazer nova requisição redundante
+      setFirestoreProbe({
+        connected: !result.error,
+        latencyMs: 140,
+        cloudSermonCount: result.cloudCount,
+        databaseId: firestoreDatabaseId,
+        projectId: firebaseProjectId,
+        uid: FIXED_PASTORAL_UID,
+        userEmail: "meguikalan@gmail.com",
+        error: result.error
+      });
+
+      setLastSyncTime(new Date());
+
+      if (!result.error) {
+        setCloudSyncStatus('synced');
+        setCloudSyncMessage(`Espelhamento 100% atualizado (${result.cloudCount} na nuvem)`);
+        setSyncActionMessage({
+          type: 'success',
+          text: `Sincronização concluída com sucesso! ${result.syncedCount} sermão(ões) salvo(s) na nuvem; ${result.cloudCount} disponíveis na nuvem.`
+        });
+      } else {
+        setCloudSyncStatus('error');
+        setCloudSyncMessage(result.error);
+        setSyncActionMessage({
+          type: 'error',
+          text: `Erro na sincronização: ${result.error}`
+        });
       }
     } catch (err: any) {
       console.error("Erro ao sincronizar:", err);
@@ -350,73 +273,10 @@ export default function App() {
     }
   };
 
-  const handleSignInGoogle = async () => {
-    if (!auth) return;
-    setIsAuthLoading(true);
-    setAuthError(null);
-    try {
-      const cred = await signInWithPopup(auth, googleProvider);
-      setCurrentUser(cred.user);
-      const probe = await testFirestoreConnection(cred.user.uid);
-      setFirestoreProbe(probe);
-      await handleForceCloudSync(cred.user.uid);
-      setSyncActionMessage({
-        type: 'success',
-        text: `Conectado com sucesso como ${cred.user.email || cred.user.uid}! Sincronização ativada.`
-      });
-    } catch (popupErr: unknown) {
-      const pErr = popupErr as { code?: string; message?: string };
-      if (pErr?.code === 'auth/popup-closed-by-user' || pErr?.code === 'auth/cancelled-popup-request') {
-        return;
-      }
-      if (pErr?.code === 'auth/unauthorized-domain') {
-        const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'serm-es-e-mensagens.ai.studio';
-        const msg = `Firebase: Error (auth/unauthorized-domain). O domínio "${currentHost}" precisa ser adicionado no Firebase Console (Authentication -> Settings -> Authorized domains).`;
-        setAuthError(msg);
-        setSyncActionMessage({
-          type: 'error',
-          text: msg
-        });
-        return;
-      }
-
-      console.warn("Aviso ao conectar com Google:", popupErr);
-      const msg = pErr?.message || String(popupErr);
-      setAuthError(msg);
-      setSyncActionMessage({
-        type: 'error',
-        text: `Falha na autenticação: ${msg}`
-      });
-    } finally {
-      setIsAuthLoading(false);
-    }
-  };
-
-  const handleSignOutUser = async () => {
-    if (!auth) return;
-    setIsAuthLoading(true);
-    try {
-      await signOut(auth);
-      setCurrentUser(null);
-      const probe = await testFirestoreConnection();
-      setFirestoreProbe(probe);
-      setCloudSyncStatus('offline');
-      setCloudSyncMessage('Desconectado');
-      setSyncActionMessage({
-        type: 'success',
-        text: 'Sessão encerrada com sucesso. Seus dados continuam preservados localmente.'
-      });
-    } catch (err: any) {
-      console.error("Erro ao desconectar:", err);
-    } finally {
-      setIsAuthLoading(false);
-    }
-  };
-
   const handleRunDiagnosticsProbe = async () => {
     setIsTestingProbe(true);
     try {
-      const probe = await testFirestoreConnection(currentUser?.uid);
+      const probe = await testFirestoreConnection(FIXED_PASTORAL_UID);
       setFirestoreProbe(probe);
       setLastSyncTime(new Date());
     } finally {
@@ -568,8 +428,8 @@ export default function App() {
     }
   };
 
-  // Navigation & Tab state
-  const [activeTab, setActiveTab] = useState<'workspace' | 'crivo' | 'study' | 'ideas' | 'illustrations' | 'series' | 'library'>('workspace');
+  // Navigation & Tab state - Abre diretamente na Biblioteca
+  const [activeTab, setActiveTab] = useState<'workspace' | 'crivo' | 'study' | 'ideas' | 'illustrations' | 'series' | 'library'>('library');
 
   // Library State
   const [sermons, setSermons] = useState<Sermon[]>(() => {
@@ -605,16 +465,15 @@ export default function App() {
   const [selectedSermonId, setSelectedSermonId] = useState<string>('');
 
   // Auto-sync contínuo em background:
-  // Sempre que a lista de sermões for alterada localmente e houver usuário logado, sincroniza com users/{uid}/sermons
+  // Sempre que a lista de sermões for alterada localmente, sincroniza com users/{uid}/sermons
   useEffect(() => {
-    if (!currentUser?.uid) return;
     if (isRemoteSyncUpdateRef.current) {
       isRemoteSyncUpdateRef.current = false;
       return;
     }
 
     const timer = setTimeout(() => {
-      syncAllLocalSermonsToCloud(sermons, currentUser.uid).then(res => {
+      syncAllLocalSermonsToCloud(sermons, FIXED_PASTORAL_UID).then(res => {
         if (res.syncedCount > 0) {
           setCloudSyncStatus('synced');
           setCloudSyncMessage(`Sincronizado na nuvem (${res.syncedCount} atualizado(s))`);
@@ -624,7 +483,7 @@ export default function App() {
     }, 800);
 
     return () => clearTimeout(timer);
-  }, [sermons, currentUser?.uid]);
+  }, [sermons]);
   
   // Create / Generator inputs
   const [titleInput, setTitleInput] = useState('');
@@ -960,7 +819,7 @@ export default function App() {
     if (activeSermon && !isSermonBlank(activeSermon)) {
       const timer = setTimeout(async () => {
         try {
-          await saveSermonToCloud(activeSermon, currentUser?.uid);
+          await saveSermonToCloud(activeSermon, FIXED_PASTORAL_UID);
           setCloudSyncStatus('synced');
           setCloudSyncMessage('Espelhado em tempo real');
         } catch (err) {
@@ -971,12 +830,12 @@ export default function App() {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [sermons, activeSermon, currentUser?.uid]);
+  }, [sermons, activeSermon]);
 
   // Auto-reconcile and Smart Merge when opening the Library tab or switching tabs
   useEffect(() => {
     if ((activeTab === 'library' || activeTab === 'study') && navigator.onLine) {
-      performInitialSermonSmartSync(sermons, currentUser?.uid).then(res => {
+      performInitialSermonSmartSync(sermons, FIXED_PASTORAL_UID).then(res => {
         if (res.hasRemoteChanges) {
           isRemoteSyncUpdateRef.current = true;
           setSermons(res.mergedSermons);
@@ -985,7 +844,7 @@ export default function App() {
         console.warn('[Library Auto-Sync] Sincronização offline ou indisponível:', err);
       });
     }
-  }, [activeTab, currentUser?.uid]);
+  }, [activeTab]);
 
   const handleSaveHistoryEntry = (dateVal: string, locationVal: string, eventVal: string, notesVal: string, editId: string | null) => {
     if (!activeSermon) return;
@@ -1017,7 +876,7 @@ export default function App() {
     };
 
     setSermons(prev => prev.map(s => s.id === activeSermon.id ? updatedSermon : s));
-    saveSermonToCloud(updatedSermon, currentUser?.uid);
+    saveSermonToCloud(updatedSermon, FIXED_PASTORAL_UID);
   };
 
   const handleDeleteHistoryEntry = (entryId: string) => {
@@ -1033,7 +892,7 @@ export default function App() {
     };
 
     setSermons(prev => prev.map(s => s.id === activeSermon.id ? updatedSermon : s));
-    saveSermonToCloud(updatedSermon, currentUser?.uid);
+    saveSermonToCloud(updatedSermon, FIXED_PASTORAL_UID);
   };
 
   const updateActiveSermonField = (field: keyof Sermon, value: any) => {
@@ -1303,7 +1162,7 @@ export default function App() {
       // Sincronização imediata com Cloud Firestore (espelhamento automático)
       setCloudSyncStatus('syncing');
       setCloudSyncMessage('Espelhando com a nuvem...');
-      saveSermonToCloud(newSermon, currentUser?.uid).then(success => {
+      saveSermonToCloud(newSermon, FIXED_PASTORAL_UID).then(success => {
         if (success) {
           setCloudSyncStatus('synced');
           setCloudSyncMessage('Espelhado em tempo real');
@@ -2078,7 +1937,7 @@ ${activeSermon.pastoralAppeal}
     };
     setSermons(prev => [duplicated, ...prev]);
     setSelectedSermonId(duplicated.id);
-    await saveSermonToCloud(duplicated, currentUser?.uid);
+    await saveSermonToCloud(duplicated, FIXED_PASTORAL_UID);
   };
 
   const toggleArchiveSermon = async (id: string) => {
@@ -2086,7 +1945,7 @@ ${activeSermon.pastoralAppeal}
     if (!target) return;
     const updated = { ...target, isArchived: !target.isArchived, updatedAt: Date.now() };
     setSermons(prev => prev.map(s => s.id === id ? updated : s));
-    await saveSermonToCloud(updated, currentUser?.uid);
+    await saveSermonToCloud(updated, FIXED_PASTORAL_UID);
   };
 
   const toggleFavoriteSermon = async (id: string) => {
@@ -2094,7 +1953,7 @@ ${activeSermon.pastoralAppeal}
     if (!target) return;
     const updated = { ...target, isFavorite: !target.isFavorite, updatedAt: Date.now() };
     setSermons(prev => prev.map(s => s.id === id ? updated : s));
-    await saveSermonToCloud(updated, currentUser?.uid);
+    await saveSermonToCloud(updated, FIXED_PASTORAL_UID);
   };
 
   const deleteSermon = (id: string) => {
@@ -2123,7 +1982,7 @@ ${activeSermon.pastoralAppeal}
     });
 
     // 3. Exclusão assíncrona definitiva no Cloud Firestore em segundo plano
-    deleteSermonFromCloud(id, currentUser?.uid).catch(err => {
+    deleteSermonFromCloud(id, FIXED_PASTORAL_UID).catch(err => {
       console.warn("[Cloud Delete] Aviso ao excluir do Firestore:", err);
     });
   };
@@ -2143,162 +2002,10 @@ ${activeSermon.pastoralAppeal}
     return matchesSearch && matchesArchive;
   });
 
-  // Tela de verificação inicial de autenticação persistente
-  if (isAuthChecking) {
-    return (
-      <div className="min-h-screen bg-[#F5F2ED] flex flex-col items-center justify-center p-6 text-[#2D2926] select-none font-sans">
-        <div className="w-14 h-14 bg-[#5A5A40] text-white rounded-2xl flex items-center justify-center shadow-lg mb-4">
-          <BookOpen className="w-7 h-7" />
-        </div>
-        <h1 className="font-serif font-bold text-xl text-gray-900 tracking-tight">Estúdio Homilético</h1>
-        <p className="text-[11px] font-bold tracking-widest uppercase text-gray-500 mt-0.5">PR. FERNANDO VEIGA</p>
-        <div className="flex items-center gap-2 mt-5 text-xs text-gray-600 bg-white/90 px-4 py-2 rounded-full border border-[#E6E2DA] shadow-xs">
-          <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#5A5A40]" />
-          <span>Restaurando sessão persistente...</span>
-        </div>
-      </div>
-    );
-  }
-
-  // 1) Tela de Entrada quando não houver usuário logado (Apenas Google)
-  if (!currentUser) {
-    return (
-      <div className="min-h-screen bg-[#F5F2ED] text-[#2D2926] flex flex-col font-sans selection:bg-[#5A5A40]/30">
-        <header className="bg-[#2D2926] text-[#E6E2DA] px-4 py-2.5 text-xs flex justify-between items-center border-b border-[#5A5A40]/20">
-          <div className="flex items-center gap-2 tracking-widest font-extrabold text-[11px]">
-            <span className="w-1.5 h-1.5 bg-[#5A5A40] rounded-full animate-pulse"></span>
-            <span>PREGA A PALAVRA</span>
-            <span className="w-1.5 h-1.5 bg-[#5A5A40] rounded-full animate-pulse"></span>
-          </div>
-          <PWAInstallPrompt />
-        </header>
-
-        <main className="flex-1 flex items-center justify-center p-4 sm:p-6">
-          <div className="max-w-md w-full bg-[#FAF8F5] border border-[#E6E2DA] rounded-3xl shadow-2xl p-6 sm:p-8 space-y-6">
-            
-            <div className="text-center space-y-2">
-              <div className="w-16 h-16 bg-[#5A5A40] text-white rounded-2xl mx-auto flex items-center justify-center shadow-md">
-                <BookOpen className="w-8 h-8" />
-              </div>
-              <h1 className="font-serif font-bold text-2xl text-gray-900 tracking-tight pt-1">
-                Estúdio Homilético
-              </h1>
-              <p className="text-xs text-gray-600 leading-relaxed pt-1">
-                Sua Biblioteca de Sermões sincronizada em tempo real entre celular e computadores.
-              </p>
-            </div>
-
-            {authError && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-950 space-y-3 shadow-xs">
-                <div className="flex items-center gap-2 font-bold text-red-900">
-                  <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
-                  <span className="text-sm">
-                    {authError.includes('unauthorized-domain') ? 'Domínio Não Autorizado no Firebase' : 'Erro de autenticação'}
-                  </span>
-                </div>
-
-                {authError.includes('unauthorized-domain') ? (
-                  <>
-                    <p className="text-xs text-red-900/90 leading-relaxed">
-                      O Google bloqueia temporariamente o login porque o domínio deste app (<strong>{typeof window !== 'undefined' ? window.location.hostname : 'serm-es-e-mensagens.ai.studio'}</strong>) ainda não foi adicionado na lista de domínios autorizados do seu projeto Firebase.
-                    </p>
-
-                    <div className="bg-white/95 p-3.5 rounded-xl border border-red-200 space-y-2.5 text-[11px] text-gray-800">
-                      <span className="font-bold text-gray-900 block text-xs">
-                        Como resolver em 30 segundos:
-                      </span>
-                      <ol className="list-decimal list-inside space-y-2.5 leading-relaxed">
-                        <li>
-                          <span className="font-medium">Copie o domínio do app:</span>
-                          <div className="mt-1 flex items-center gap-2">
-                            <code className="bg-red-100/70 text-red-900 px-2.5 py-1 rounded-md font-mono font-bold select-all text-[11px]">
-                              {typeof window !== 'undefined' ? window.location.hostname : 'serm-es-e-mensagens.ai.studio'}
-                            </code>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const dom = typeof window !== 'undefined' ? window.location.hostname : 'serm-es-e-mensagens.ai.studio';
-                                navigator.clipboard.writeText(dom);
-                                setDomainCopied(true);
-                                setTimeout(() => setDomainCopied(false), 2500);
-                              }}
-                              className="px-2.5 py-1 text-[11px] font-bold text-[#5A5A40] bg-[#FAF6EE] hover:bg-[#5A5A40] hover:text-white rounded-md border border-[#5A5A40]/30 transition-all cursor-pointer flex items-center gap-1 shrink-0"
-                            >
-                              {domainCopied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                              <span>{domainCopied ? 'Copiado!' : 'Copiar'}</span>
-                            </button>
-                          </div>
-                        </li>
-                        <li>
-                          <span className="font-medium">Abra a página exata no Console do Firebase:</span>
-                          <div className="mt-1">
-                            <a
-                              href="https://console.firebase.google.com/project/top-autumn-p9brs/authentication/settings"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-red-700 hover:bg-red-800 rounded-lg shadow-xs cursor-pointer transition-all"
-                            >
-                              <span>Abrir Configurações do Firebase</span>
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </a>
-                          </div>
-                        </li>
-                        <li>
-                          Em <strong>Domínios autorizados</strong>, clique em <strong>Adicionar domínio</strong>, cole <code className="bg-gray-100 px-1 py-0.5 rounded font-mono text-[10px]">{typeof window !== 'undefined' ? window.location.hostname : 'serm-es-e-mensagens.ai.studio'}</code> e clique em <strong>Salvar</strong>. <em>(Dica: adicione também <code>ai.studio</code>)</em>.
-                        </li>
-                        <li>
-                          Volte aqui e clique novamente no botão <strong>Entrar com Google</strong>.
-                        </li>
-                      </ol>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-[11px] font-mono leading-relaxed break-all">{authError}</p>
-                )}
-              </div>
-            )}
-
-            <div className="space-y-3.5">
-              <button
-                type="button"
-                onClick={handleSignInGoogle}
-                disabled={isAuthLoading}
-                className="w-full py-4 px-5 rounded-2xl font-bold text-base text-white bg-[#5A5A40] hover:bg-[#2D2926] shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50"
-              >
-                {isAuthLoading ? (
-                  <>
-                    <RefreshCw className="w-5 h-5 animate-spin" />
-                    <span>Conectando com o Google...</span>
-                  </>
-                ) : (
-                  <>
-                    <Cloud className="w-5 h-5" />
-                    <span>Entrar com Google</span>
-                  </>
-                )}
-              </button>
-
-              <div className="bg-stone-50 border border-stone-200/80 rounded-xl p-3.5 space-y-2 text-[11px] text-stone-600 text-center">
-                <div className="flex items-center justify-center gap-1.5 text-stone-900 font-semibold">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Sessão persistente entre aberturas</span>
-                </div>
-                <p className="leading-relaxed">
-                  Você entra apenas uma vez. Todos os seus aparelhos compartilham o mesmo acervo centralizado em nuvem.
-                </p>
-              </div>
-            </div>
-
-          </div>
-        </main>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-[#F5F2ED] text-[#2D2926] flex flex-col font-sans transition-all selection:bg-[#5A5A40]/30">
       
-      {/* Upper Baptist Heritage bar with Authenticated Pastor details & Logout */}
+      {/* Upper Baptist Heritage bar */}
       <div className="bg-[#2D2926] text-[#E6E2DA] px-4 py-2 text-xs flex flex-wrap justify-between items-center border-b border-[#5A5A40]/20 font-sans font-medium upper-baptist-heritage-bar gap-3">
         <div className="flex items-center gap-2 tracking-widest font-extrabold text-[11px]">
           <span className="w-1.5 h-1.5 bg-[#5A5A40] rounded-full animate-pulse"></span>
@@ -2310,35 +2017,13 @@ ${activeSermon.pastoralAppeal}
         <div className="flex items-center gap-2.5 ml-auto flex-wrap">
           <PWAInstallPrompt />
 
-          {/* 3) E-mail da conta logada e botão Sair na barra superior */}
-          {currentUser?.email ? (
-            <div className="flex items-center gap-2 bg-black/40 px-3 py-1 rounded-full border border-emerald-500/30 text-[11px]">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span className="font-mono text-emerald-300 font-semibold max-w-[160px] sm:max-w-none truncate" title={currentUser.email}>
-                {currentUser.email}
-              </span>
-              <button
-                type="button"
-                onClick={handleSignOutUser}
-                disabled={isAuthLoading}
-                className="ml-1 text-[11px] font-bold text-red-300 hover:text-white bg-red-950/60 hover:bg-red-900/80 px-2 py-0.5 rounded border border-red-700/50 cursor-pointer transition-colors disabled:opacity-50"
-                title="Sair desta conta"
-              >
-                {isAuthLoading ? 'Saindo...' : 'Sair'}
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={handleSignInGoogle}
-              disabled={isAuthLoading}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-white/20 text-[11px] font-bold text-white bg-[#5A5A40] hover:bg-[#737355] transition-all cursor-pointer shadow-xs disabled:opacity-50"
-              title="Entrar com sua Conta Google"
-            >
-              <Cloud className="w-3.5 h-3.5" />
-              <span>{isAuthLoading ? 'Conectando...' : 'Entrar com Google'}</span>
-            </button>
-          )}
+          {/* Indicador de Acervo Sincronizado */}
+          <div className="flex items-center gap-2 bg-black/40 px-3 py-1 rounded-full border border-emerald-500/30 text-[11px]">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="font-mono text-emerald-300 font-semibold max-w-[160px] sm:max-w-none truncate">
+              Biblioteca Sincronizada
+            </span>
+          </div>
 
           {/* Multi-Device Synchronization & Cloud Status Indicator */}
           <button
@@ -4000,12 +3685,10 @@ ${activeSermon.pastoralAppeal}
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-2">
-                  {currentUser?.email && (
-                    <span className="text-[11px] text-gray-500 font-mono flex items-center gap-1.5 bg-stone-100 px-2.5 py-1 rounded-lg border border-stone-200">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      <span className="truncate max-w-[150px] sm:max-w-none">{currentUser.email}</span>
-                    </span>
-                  )}
+                  <span className="text-[11px] text-gray-700 font-mono flex items-center gap-1.5 bg-stone-100 px-2.5 py-1 rounded-lg border border-stone-200">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className="truncate max-w-[150px] sm:max-w-none">Nuvem Conectada</span>
+                  </span>
 
                   <button
                     type="button"
@@ -4942,70 +4625,41 @@ ${activeSermon.pastoralAppeal}
             {/* TAB 1: FIRESTORE REALTIME */}
             {syncModalTab === 'realtime' && (
               <div className="space-y-4">
-                {/* 1. Autenticação e Identificação do Usuário */}
-                {!currentUser ? (
-                  <div className="bg-[#FAF8F5] border border-[#E6E2DA] rounded-xl p-4 sm:p-5 space-y-4">
-                    <div className="space-y-1">
+                {/* 1. Identificação do Usuário e UID Fixo */}
+                <div className="bg-[#FAF8F5] border border-[#E6E2DA] rounded-xl p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E6E2DA] pb-3">
+                    <div>
                       <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 block">
-                        Autenticação Obrigatória para Sincronização
+                        Sincronização Direta da Biblioteca
                       </span>
-                      <p className="text-xs text-gray-600">
-                        Conecte com sua conta Google para que todos os seus aparelhos compartilhem o mesmo acervo e UID em tempo real.
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <p className="font-bold text-gray-900 text-sm">
+                          Acervo Sincronizado em Nuvem (Multi-Dispositivo)
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="px-3 py-1 bg-emerald-100 text-emerald-800 font-bold text-xs rounded-full border border-emerald-300">
+                      Sincronização Direta Ativa
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
+                    <div>
+                      <span className="text-[10px] font-semibold text-gray-500 uppercase block">Conta Pastoral:</span>
+                      <p className="font-mono text-gray-900 font-medium select-all break-all">
+                        meguikalan@gmail.com
                       </p>
                     </div>
-
-                    {/* Botão Entrar com Google */}
-                    <button
-                      type="button"
-                      onClick={handleSignInGoogle}
-                      disabled={isAuthLoading}
-                      className="w-full py-3.5 px-4 rounded-xl font-bold text-sm text-white bg-[#5A5A40] hover:bg-[#2D2926] shadow-sm hover:shadow transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
-                    >
-                      <Cloud className="w-5 h-5" />
-                      <span>{isAuthLoading ? 'Conectando...' : 'Entrar com Google'}</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="bg-[#FAF8F5] border border-[#E6E2DA] rounded-xl p-4 space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E6E2DA] pb-3">
-                      <div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 block">
-                          Conta Google Conectada
-                        </span>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                          <p className="font-bold text-gray-900 text-sm">
-                            {currentUser.email}
-                          </p>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={handleSignOutUser}
-                        disabled={isAuthLoading}
-                        className="px-3.5 py-1.5 text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100 rounded-lg border border-red-200 cursor-pointer transition-all disabled:opacity-50"
-                      >
-                        {isAuthLoading ? 'Saindo...' : 'Sair'}
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
-                      <div>
-                        <span className="text-[10px] font-semibold text-gray-500 uppercase block">E-mail da Conta:</span>
-                        <p className="font-mono text-gray-900 font-medium select-all break-all">
-                          {currentUser.email}
-                        </p>
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-semibold text-gray-500 uppercase block">UID do Usuário:</span>
-                        <p className="font-mono text-gray-800 text-[11px] select-all break-all bg-white p-1.5 rounded border border-[#E6E2DA]">
-                          {currentUser.uid}
-                        </p>
-                      </div>
+                    <div>
+                      <span className="text-[10px] font-semibold text-gray-500 uppercase block">UID Fixo Pastoral:</span>
+                      <p className="font-mono text-gray-800 text-[11px] select-all break-all bg-white p-1.5 rounded border border-[#E6E2DA]">
+                        {FIXED_PASTORAL_UID}
+                      </p>
                     </div>
                   </div>
-                )}
+                </div>
 
                 {/* 2. Informações do Projeto e Status de Conexão */}
                 <div className="flex items-center justify-between">
@@ -5043,13 +4697,13 @@ ${activeSermon.pastoralAppeal}
                         </>
                       ) : (
                         <>
-                          <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                          <span className="text-amber-700">{currentUser ? 'Aguardando sincronização' : 'Requer Autenticação'}</span>
+                          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                          <span className="text-amber-700">Conectando ao Firestore...</span>
                         </>
                       )}
                     </div>
                     <p className="text-[10px] text-gray-400 font-mono">
-                      Caminho: users/{currentUser?.uid ? `${currentUser.uid.slice(0, 10)}...` : '{uid}'}/sermons
+                      Caminho: users/{FIXED_PASTORAL_UID.slice(0, 10)}.../sermons
                     </p>
                   </div>
 
@@ -5066,10 +4720,10 @@ ${activeSermon.pastoralAppeal}
                   <div className="p-3.5 bg-white rounded-xl border border-[#E6E2DA] space-y-1">
                     <span className="text-gray-500 block text-[10px] font-semibold uppercase">Acervo no Firestore (Nuvem)</span>
                     <p className="font-bold text-gray-900 text-sm">
-                      {firestoreProbe?.connected ? `${firestoreProbe.cloudSermonCount} sermões na nuvem` : (currentUser ? 'Consultando...' : 'Requer login')}
+                      {firestoreProbe?.connected ? `${firestoreProbe.cloudSermonCount} sermões na nuvem` : 'Consultando...'}
                     </p>
                     <p className="text-[10px] text-gray-500">
-                      Coleção users/{'{uid}'}/sermons
+                      Coleção users/{FIXED_PASTORAL_UID.slice(0, 10)}.../sermons
                     </p>
                   </div>
                 </div>
@@ -5078,34 +4732,29 @@ ${activeSermon.pastoralAppeal}
                 <div className="p-3.5 bg-stone-50 rounded-xl border border-stone-200 flex items-center justify-between text-xs">
                   <span className="font-semibold text-stone-700">Quantidade de Sermões (Comparativo):</span>
                   <span className="font-mono font-bold text-stone-900 bg-white px-2.5 py-1 rounded border border-stone-200">
-                    {sermons.filter(s => !isSermonBlank(s)).length} locais x {firestoreProbe?.connected ? firestoreProbe.cloudSermonCount : (currentUser ? 0 : 0)} na nuvem
+                    {sermons.filter(s => !isSermonBlank(s)).length} locais x {firestoreProbe?.connected ? firestoreProbe.cloudSermonCount : 0} na nuvem
                   </span>
                 </div>
 
-                {/* 4. Última Mensagem de Erro do Firestore */}
+                {/* 4. Mensagem de Estado do Firestore */}
                 <div className="space-y-1.5">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500 block">
-                    Última Mensagem de Erro do Firestore
+                    Status da Conexão Firestore
                   </span>
                   {firestoreProbe?.error || getLastFirestoreError() ? (
                     <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 space-y-1 text-xs text-red-900 font-mono">
                       <div className="flex items-center gap-1.5 font-bold text-red-950">
                         <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-                        <span>Erro Registrado no Firestore:</span>
+                        <span>Aviso Registrado no Firestore:</span>
                       </div>
                       <p className="text-[11px] leading-relaxed break-all">
                         {firestoreProbe?.error || getLastFirestoreError()}
                       </p>
-                      {(firestoreProbe?.error?.includes('permission-denied') || getLastFirestoreError()?.includes('permission-denied')) && (
-                        <p className="text-[10px] font-sans text-red-700 mt-1 pt-1 border-t border-red-200 font-semibold">
-                          🔒 <strong>Diagnóstico de Permissão:</strong> As regras de segurança exigem autenticação do usuário (request.auth.uid == uid). Faça login com sua conta Google acima para liberar a leitura e gravação em users/{'{uid}'}/sermons.
-                        </p>
-                      )}
                     </div>
                   ) : (
                     <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3 flex items-center gap-2 text-xs text-emerald-900 font-mono">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span>Nenhum erro registrado (OK - Conexão e permissões validadas)</span>
+                      <span>Conexão ativa e sincronizada com o acervo pastoral</span>
                     </div>
                   )}
                 </div>
@@ -5142,26 +4791,10 @@ ${activeSermon.pastoralAppeal}
 service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
-
-      match /sermons/{sermonId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
-      }
-
-      match /series/{seriesId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
-      }
-
-      match /illustrations/{illustrationId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
-      }
-
-      match /tombstones/{tombstoneId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
-      }
+      allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
 
       match /{document=**} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
+        allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
       }
     }
   }

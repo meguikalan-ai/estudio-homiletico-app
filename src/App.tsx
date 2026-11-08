@@ -67,6 +67,7 @@ import {
   DeviceSyncPackage,
   performInitialSermonSmartSync
 } from './services/syncService';
+import { safeApiPost, buildClientFallbackSermon } from './services/apiClient';
 
 export default function App() {
   const [showSyncDiagnosticsModal, setShowSyncDiagnosticsModal] = useState<boolean>(false);
@@ -529,6 +530,7 @@ export default function App() {
   const [showArchivedOnly, setShowArchivedOnly] = useState(false);
   const [apiFallbackNotice, setApiFallbackNotice] = useState<string | null>(null);
   const [generationSuccessNotice, setGenerationSuccessNotice] = useState<string | null>(null);
+  const [generationErrorNotice, setGenerationErrorNotice] = useState<string | null>(null);
   const [sermonIdDeleting, setSermonIdDeleting] = useState<string | null>(null);
   const [showPericopeExplorerModal, setShowPericopeExplorerModal] = useState(false);
   const [showPulpitMode, setShowPulpitMode] = useState(false);
@@ -1085,33 +1087,49 @@ export default function App() {
   // AI Trigger actions
   const handleGenerateSermon = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!scriptureInput) {
-      alert("Por favor, preencha a passagem bíblica de estudo para guiar a pregação.");
+    if (!scriptureInput || !scriptureInput.trim()) {
+      setGenerationErrorNotice("Por favor, preencha a passagem bíblica de estudo para guiar a pregação.");
       return;
     }
     setIsGenerating(true);
+    setGenerationErrorNotice(null);
+
+    let data: any = null;
+
     try {
-      const response = await fetch('/api/gemini/generate-sermon', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: titleInput,
-          theme: themeInput,
-          scripture: scriptureInput,
-          style: sermonStyle,
-          churchProfile,
-          audience,
-          bibleVersion,
-          isOutline,
-          seriesName,
-          churchProfileDetails,
-          duration: sermonDuration,
-          theologicalNotes: theologicalNotes.trim() || undefined
-        })
+      // safeApiPost possui retentativas automáticas e controle de timeout para prevenir 'Failed to fetch'
+      data = await safeApiPost('/api/gemini/generate-sermon', {
+        title: titleInput,
+        theme: themeInput,
+        scripture: scriptureInput,
+        style: sermonStyle,
+        churchProfile,
+        audience,
+        bibleVersion,
+        isOutline,
+        seriesName,
+        churchProfileDetails,
+        duration: sermonDuration,
+        theologicalNotes: theologicalNotes.trim() || undefined
+      }, { retries: 1, timeoutMs: 95000 });
+    } catch (err) {
+      console.warn("[handleGenerateSermon] Falha de rede ou timeout com a API remota. Ativando contingência homilética estruturada:", err);
+      // Fallback de contingência local: garante que o pastor nunca fique bloqueado sem sermão
+      data = buildClientFallbackSermon({
+        title: titleInput,
+        theme: themeInput,
+        scripture: scriptureInput,
+        style: sermonStyle,
+        churchProfile,
+        audience,
+        bibleVersion,
+        duration: sermonDuration,
+        seriesName
       });
-      const data = await response.json();
-      
-      if (data.fallbackActive) {
+    }
+
+    try {
+      if (data?.fallbackActive) {
         setApiFallbackNotice(data.fallbackReason);
       } else {
         setApiFallbackNotice(null);
@@ -1119,7 +1137,7 @@ export default function App() {
       
       // Auto-compute hymns suggestions
       const hymnsCollection = selectHymnsForSermon(
-        (data.title || '') + ' ' + (data.introduction || '') + ' ' + (data.theme || ''),
+        (data?.title || '') + ' ' + (data?.introduction || '') + ' ' + (data?.theme || ''),
         themeInput || 'Geral',
         churchProfile
       );
@@ -1133,21 +1151,21 @@ export default function App() {
 
       const newSermon: Sermon = {
         id: 'ser_' + Date.now(),
-        title: (data.title || titleInput || 'Sermão Expositivo').replace(/^(título|titulo|title|sermão|sermao)\s*[:\-]?\s*/i, '').trim(),
-        theme: data.theme || themeInput || 'Tema do sermão',
-        scripture: data.scripture || scriptureInput,
-        introduction: data.introduction || 'Introdução do sermão',
-        biblicalContext: data.biblicalContext || 'Contexto bíblico',
-        expositoryPoints: data.expositoryPoints || [
+        title: (data?.title || titleInput || 'Sermão Expositivo').replace(/^(título|titulo|title|sermão|sermao)\s*[:\-]?\s*/i, '').trim(),
+        theme: data?.theme || themeInput || 'Tema do sermão',
+        scripture: data?.scripture || scriptureInput,
+        introduction: data?.introduction || 'Introdução do sermão',
+        biblicalContext: data?.biblicalContext || 'Contexto bíblico',
+        expositoryPoints: data?.expositoryPoints || [
           { title: 'I. Ponto expositivo Inicial', explanation: 'Nova elucidação bíblica' }
         ],
-        illustrations: data.illustrations || [
+        illustrations: data?.illustrations || [
           { type: 'bíblica', description: 'Narrativa das Escrituras inserida organicamente.' },
           { type: 'cotidiano', description: 'Exemplo do cotidiano correspondente.' }
         ],
-        applications: data.applications || ['Aplicação prática na igreja local'],
-        conclusion: data.conclusion || 'Conclusão pastoral reformadora',
-        pastoralAppeal: data.pastoralAppeal || 'Apelo à salvação divina',
+        applications: data?.applications || ['Aplicação prática na igreja local'],
+        conclusion: data?.conclusion || 'Conclusão pastoral reformadora',
+        pastoralAppeal: data?.pastoralAppeal || 'Apelo à salvação divina',
         date: new Date().toISOString(),
         style: sermonStyle,
         churchProfile,
@@ -1155,7 +1173,7 @@ export default function App() {
         bibleVersion,
         isOutline,
         duration: sermonDuration,
-        tags: data.tags || [themeInput || 'Doutrina', 'Bíblico'],
+        tags: data?.tags || [themeInput || 'Doutrina', 'Bíblico'],
         seriesName: seriesName || undefined,
         hymns: formattedHymns,
         isFavorite: false,
@@ -1207,8 +1225,8 @@ export default function App() {
       setSeriesName('');
       
     } catch (err) {
-      console.error(err);
-      alert("Erro ao processar a geração pelo assistente inteligente.");
+      console.error("[handleGenerateSermon] Erro inesperado na estruturação do sermão:", err);
+      setGenerationErrorNotice("Ocorreu um erro inesperado ao salvar o sermão gerado. Por favor, tente novamente.");
     } finally {
       setIsGenerating(false);
     }
@@ -1239,13 +1257,12 @@ export default function App() {
     }));
 
     try {
-      const response = await fetch('/api/gemini/generate-illustrations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: `${point.title} (${activeSermon.title})`, type })
-      });
-      const data = await response.json();
-      if (data.illustrations && data.illustrations.length > 0) {
+      const data: any = await safeApiPost('/api/gemini/generate-illustrations', {
+        topic: `${point.title} (${activeSermon.title})`,
+        type
+      }, { retries: 2, timeoutMs: 30000 });
+
+      if (data && data.illustrations && data.illustrations.length > 0) {
         const suggestion = data.illustrations[0];
         const desc = `${suggestion.story}\n\nLição Central: ${suggestion.moral || suggestion.title}`;
         
@@ -1298,7 +1315,7 @@ export default function App() {
         }));
       }
     } catch (err) {
-      console.error(err);
+      console.warn("[suggestIllustrationForPoint] Usando ilustração alternativa por oscilação de rede:", err);
       setSermons(prev => prev.map(s => {
         if (s.id === selectedSermonId) {
           const pts = s.expositoryPoints.map((pt, idx) => {
@@ -1329,14 +1346,11 @@ export default function App() {
     if (!activeSermon) return;
     setIsEvaluating(true);
     try {
-      const response = await fetch('/api/gemini/evaluate-sermon', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sermon: activeSermon })
-      });
-      const data = await response.json();
+      const data: any = await safeApiPost('/api/gemini/evaluate-sermon', {
+        sermon: activeSermon
+      }, { retries: 2, timeoutMs: 35000 });
       
-      if (data.fallbackActive) {
+      if (data?.fallbackActive) {
         setApiFallbackNotice(data.fallbackReason);
       } else {
         setApiFallbackNotice(null);
@@ -1344,8 +1358,8 @@ export default function App() {
       
       updateActiveSermonField('evaluation', data);
     } catch (err) {
-      console.error(err);
-      alert("Erro ao obter avaliação do Seminário.");
+      console.warn("[handleEvaluateSermon] Falha na avaliação:", err);
+      setApiFallbackNotice("O serviço de avaliação homilética está temporariamente inacessível. Tente novamente em instantes.");
     } finally {
       setIsEvaluating(false);
     }
@@ -1355,17 +1369,12 @@ export default function App() {
     if (!activeSermon) return;
     setImprovingSuggestionIdx(idx);
     try {
-      const response = await fetch('/api/gemini/improve-sermon', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sermon: activeSermon, improvement })
-      });
-      if (!response.ok) {
-        throw new Error("Falha ao aperfeiçoar sermão.");
-      }
-      const data = await response.json();
+      const data: any = await safeApiPost('/api/gemini/improve-sermon', {
+        sermon: activeSermon,
+        improvement
+      }, { retries: 2, timeoutMs: 35000 });
 
-      if (data.fallbackActive) {
+      if (data?.fallbackActive) {
         setApiFallbackNotice(data.fallbackReason);
       } else {
         setApiFallbackNotice(null);
@@ -1409,18 +1418,13 @@ export default function App() {
     e.preventDefault();
     setIsExegesisLoading(true);
     try {
-      const response = await fetch('/api/gemini/chat-bible', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scripture: exegesisScripture,
-          question: exegesisQuestion,
-          chatHistory: [] // Can append more if needed
-        })
-      });
-      const data = await response.json();
+      const data: any = await safeApiPost('/api/gemini/chat-bible', {
+        scripture: exegesisScripture,
+        question: exegesisQuestion,
+        chatHistory: [] // Can append more if needed
+      }, { retries: 2, timeoutMs: 35000 });
       
-      if (data.fallbackActive) {
+      if (data?.fallbackActive) {
         setApiFallbackNotice(data.fallbackReason);
       } else {
         setApiFallbackNotice(null);
@@ -1428,7 +1432,7 @@ export default function App() {
       
       setExegesisResponse(data);
     } catch (err) {
-      console.error(err);
+      console.warn("[handleSendMessage] Erro na consulta exegética:", err);
     } finally {
       setIsExegesisLoading(false);
     }
@@ -1443,17 +1447,11 @@ export default function App() {
     setPericopeError(null);
     setPericopeAnalysis(null);
     try {
-      const response = await fetch('/api/gemini/explore-pericope', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scripture: targetScripture })
-      });
-      if (!response.ok) {
-        throw new Error("Erro de rede ao acessar o servidor de exegese.");
-      }
-      const data = await response.json();
+      const data: any = await safeApiPost('/api/gemini/explore-pericope', {
+        scripture: targetScripture
+      }, { retries: 2, timeoutMs: 35000 });
       
-      if (data.fallbackActive) {
+      if (data?.fallbackActive) {
         setApiFallbackNotice(data.fallbackReason);
       } else {
         setApiFallbackNotice(null);
@@ -1461,8 +1459,8 @@ export default function App() {
       
       setPericopeAnalysis(data);
     } catch (err: any) {
-      console.error(err);
-      setPericopeError("Não foi possível concluir a análise exegética da perícope. Verifique a passagem informada.");
+      console.warn("[handleExplorePericope] Falha na exploração de perícope:", err);
+      setPericopeError("Não foi possível concluir a análise exegética da perícope no momento. Verifique a passagem informada.");
     } finally {
       setIsExploringPericope(false);
     }
@@ -1471,22 +1469,19 @@ export default function App() {
   const handleCompareVersions = async () => {
     setIsComparingLoading(true);
     try {
-      const response = await fetch('/api/gemini/compare-versions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scripture: comparedScripture })
-      });
-      const data = await response.json();
+      const data: any = await safeApiPost('/api/gemini/compare-versions', {
+        scripture: comparedScripture
+      }, { retries: 2, timeoutMs: 35000 });
       
-      if (data.fallbackActive) {
+      if (data?.fallbackActive) {
         setApiFallbackNotice(data.fallbackReason);
       } else {
         setApiFallbackNotice(null);
       }
       
-      setComparedVerses(data.comparisons || []);
+      setComparedVerses(data?.comparisons || []);
     } catch (err) {
-      console.error(err);
+      console.warn("[handleCompareVersions] Erro na comparação de versões:", err);
     } finally {
       setIsComparingLoading(false);
     }
@@ -1495,19 +1490,14 @@ export default function App() {
   const handleGenerateSeries = async () => {
     setIsSeriesGenerating(true);
     try {
-      const response = await fetch('/api/gemini/generate-series', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          book: seriesBook,
-          theme: seriesTheme,
-          campaign: seriesCampaign,
-          sermonCount: seriesSermonCount
-        })
-      });
-      const data = await response.json();
+      const data: any = await safeApiPost('/api/gemini/generate-series', {
+        book: seriesBook,
+        theme: seriesTheme,
+        campaign: seriesCampaign,
+        sermonCount: seriesSermonCount
+      }, { retries: 2, timeoutMs: 45000 });
       
-      if (data.fallbackActive) {
+      if (data?.fallbackActive) {
         setApiFallbackNotice(data.fallbackReason);
       } else {
         setApiFallbackNotice(null);
@@ -1518,7 +1508,7 @@ export default function App() {
         await saveSeriesToCloud(data);
       }
     } catch (err) {
-      console.error(err);
+      console.warn("[handleGenerateSeries] Erro ao gerar série expositiva:", err);
     } finally {
       setIsSeriesGenerating(false);
     }
@@ -2215,6 +2205,23 @@ ${activeSermon.pastoralAppeal}
                   ✕ Fechar
                 </button>
               </div>
+            </div>
+          )}
+
+          {generationErrorNotice && (
+            <div className="mb-6 max-w-7xl mx-auto w-full p-4 bg-amber-500/10 rounded-xl border border-amber-500/30 text-amber-950 text-xs flex items-center justify-between gap-4 animate-fade-in shadow-xs">
+              <div className="flex items-center gap-3">
+                <AlertCircle className="w-5 h-5 text-amber-700 shrink-0" />
+                <span className="font-medium text-amber-900">{generationErrorNotice}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGenerationErrorNotice(null)}
+                className="text-amber-800 hover:text-amber-950 font-bold px-2 py-1 rounded hover:bg-amber-500/10 transition-all text-[10px] uppercase tracking-wider select-none cursor-pointer"
+                title="Fechar"
+              >
+                ✕ Fechar
+              </button>
             </div>
           )}
 

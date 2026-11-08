@@ -42,9 +42,9 @@ async function generateJSON(params: {
     throw new Error("Gemini API Client not initialized (Simulation mode).");
   }
 
-  const primaryModel = params.customModel || "gemini-3.8-flash";
-  // Dynamic fallback models in sequence to ensure absolute continuation
-  const modelsToTry = [primaryModel, "gemini-flash-latest", "gemini-3.1-flash-lite"].filter(
+  const primaryModel = params.customModel || "gemini-flash-latest";
+  // Dynamic fallback models in sequence to ensure absolute continuation and low latency
+  const modelsToTry = [primaryModel, "gemini-3.8-flash", "gemini-3.1-flash-lite"].filter(
     (m, idx, arr) => arr.indexOf(m) === idx
   );
 
@@ -62,18 +62,34 @@ async function generateJSON(params: {
 
   for (let i = 0; i < modelsToTry.length; i++) {
     const currentModel = modelsToTry[i];
-    const maxRetriesForModel = 3;
+    const maxRetriesForModel = 2;
     let attempt = 0;
 
     while (attempt < maxRetriesForModel) {
       try {
         console.log(`[generateJSON] Attempting API call with model (${i + 1}/${modelsToTry.length}), attempt ${attempt + 1}/${maxRetriesForModel}: ${currentModel}`);
-        const response = await ai.models.generateContent({
+        
+        // Timeout de segurança de 85s por tentativa para comportar a geração densa e exegética sem interrupção precoce
+        let timerId: NodeJS.Timeout | null = null;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timerId = setTimeout(() => {
+            reject(new Error(`Tempo limite excedido na resposta do modelo ${currentModel} após 85s.`));
+          }, 85000);
+        });
+
+        const callPromise = ai.models.generateContent({
           model: currentModel,
           contents: params.contents,
           config,
         });
-        const parsedText = response.text || "{}";
+
+        let response: any;
+        try {
+          response = await Promise.race([callPromise, timeoutPromise]);
+        } finally {
+          if (timerId) clearTimeout(timerId);
+        }
+        const parsedText = response?.text || "{}";
 
         // Robust clean-parse for JSON, stripping markdown codeblock indicators if returned
         let cleanText = parsedText.trim();
@@ -2522,9 +2538,12 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+  server.keepAliveTimeout = 65000;
+  server.headersTimeout = 66000;
+  server.timeout = 120000;
 }
 
 startServer();

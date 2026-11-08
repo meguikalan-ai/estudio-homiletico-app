@@ -38,6 +38,53 @@ export function setLastFirestoreError(err: string | null): void {
   lastFirestoreError = err;
 }
 
+export interface FirestoreErrorInfo {
+  code: string;
+  message: string;
+  sermonTitle?: string;
+  sermonId?: string;
+  path?: string;
+  timestamp: number;
+}
+
+let firestoreErrorListeners: ((info: FirestoreErrorInfo) => void)[] = [];
+
+/**
+ * Registra um ouvinte para falhas de gravação com o Firestore,
+ * permitindo que a interface apresente alertas em tempo real.
+ */
+export function onFirestoreError(listener: (info: FirestoreErrorInfo) => void): () => void {
+  firestoreErrorListeners.push(listener);
+  return () => {
+    firestoreErrorListeners = firestoreErrorListeners.filter(l => l !== listener);
+  };
+}
+
+/**
+ * Notifica erro de gravação para a interface gráfica e log detalhado no console.
+ * NUNCA esconde erros.
+ */
+export function notifyFirestoreError(info: FirestoreErrorInfo): void {
+  console.error(`🚨 [FIRESTORE ERRO NA GRAVAÇÃO]:`, {
+    codigo: info.code,
+    mensagem: info.message,
+    sermão: info.sermonTitle,
+    id: info.sermonId,
+    caminho: info.path,
+    hora: new Date(info.timestamp).toLocaleTimeString()
+  });
+
+  setLastFirestoreError(`[${info.code}] ${info.message}`);
+
+  firestoreErrorListeners.forEach(fn => {
+    try { fn(info); } catch {}
+  });
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('pastoral-firestore-error', { detail: info }));
+  }
+}
+
 /**
  * UID fixo único do pastor para sincronização direta sem autenticação
  */
@@ -105,23 +152,39 @@ export function recordSyncLog(
 }
 
 /**
- * Deep sanitize helper to guarantee NO `undefined` values exist anywhere in nested data structures
+ * Deep sanitize helper: remove ou limpa qualquer valor `undefined`.
+ * O Firestore rejeita completamente `undefined` com a exceção:
+ * "Unsupported field value: undefined".
+ * - Chaves de objeto com valor `undefined` são completamente excluídas.
+ * - Elementos de array com valor `undefined` são filtrados.
+ * - Strings e outros valores permanecem íntegros.
  */
-function removeUndefinedFields<T>(obj: T): T {
-  if (obj === undefined) return null as unknown as T;
-  if (obj === null) return null as unknown as T;
+export function cleanUndefinedRecursively<T>(obj: T): T {
+  if (obj === undefined) {
+    return '' as unknown as T;
+  }
+  if (obj === null) {
+    return null as unknown as T;
+  }
   if (Array.isArray(obj)) {
-    return obj.map(item => removeUndefinedFields(item)) as unknown as T;
+    return obj
+      .filter(item => item !== undefined)
+      .map(item => cleanUndefinedRecursively(item)) as unknown as T;
   }
   if (typeof obj === 'object') {
     const res: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(obj as Record<string, unknown>)) {
-      res[key] = removeUndefinedFields(val);
+      if (val !== undefined) {
+        res[key] = cleanUndefinedRecursively(val);
+      }
     }
     return res as T;
   }
   return obj;
 }
+
+// Alias retrocompatível
+export const removeUndefinedFields = cleanUndefinedRecursively;
 
 /**
  * Get the set of IDs of sermons explicitly deleted by the user
@@ -383,75 +446,81 @@ export async function purgeModelSermonsFromStorage(userId?: string): Promise<voi
 
 /**
  * Clean and normalize a sermon object for Firestore storage (avoid undefined fields)
+ * O Firestore rejeita expressamente qualquer campo cujo valor seja `undefined`.
+ * Esta função assegura que strings fiquem como `""`, arrays como `[]` e chaves indefinidas sejam eliminadas.
  */
 export function sanitizeSermonForFirestore(sermon: Sermon, userId?: string): Record<string, unknown> {
   const uid = getEffectiveUid(userId);
   const sanitized: Record<string, unknown> = {
-    id: sermon.id,
-    userId: uid || 'anonymous',
-    title: sermon.title || '',
-    theme: sermon.theme || '',
-    scripture: sermon.scripture || '',
-    introduction: sermon.introduction || '',
-    biblicalContext: sermon.biblicalContext || '',
+    id: sermon.id || ('ser_' + Date.now()),
+    userId: uid || FIXED_PASTORAL_UID,
+    title: (sermon.title || '').trim(),
+    theme: (sermon.theme || '').trim(),
+    scripture: (sermon.scripture || '').trim(),
+    introduction: (sermon.introduction || '').trim(),
+    biblicalContext: (sermon.biblicalContext || '').trim(),
     expositoryPoints: (sermon.expositoryPoints || []).map(p => ({
-      title: p.title || '',
-      precedingTransition: p.precedingTransition || '',
-      explanation: p.explanation || '',
+      title: (p.title || '').trim(),
+      precedingTransition: (p.precedingTransition || '').trim(),
+      explanation: (p.explanation || '').trim(),
       illustration: p.illustration ? {
         type: p.illustration.type || 'cotidiano',
-        description: p.illustration.description || ''
+        description: (p.illustration.description || '').trim()
       } : null,
-      application: p.application || ''
+      application: (p.application || '').trim()
     })),
     illustrations: (sermon.illustrations || []).map(i => ({
       type: i.type || 'cotidiano',
-      description: i.description || ''
+      description: (i.description || '').trim()
     })),
-    applications: sermon.applications || [],
-    conclusion: sermon.conclusion || '',
-    pastoralAppeal: sermon.pastoralAppeal || '',
+    applications: (sermon.applications || []).filter((a): a is string => typeof a === 'string' && a.trim().length > 0),
+    conclusion: (sermon.conclusion || '').trim(),
+    pastoralAppeal: (sermon.pastoralAppeal || '').trim(),
     date: sermon.date || new Date().toISOString(),
     style: sermon.style || 'original',
     churchProfile: sermon.churchProfile || 'tradicional',
-    audience: sermon.audience || '',
+    audience: (sermon.audience || '').trim(),
     bibleVersion: sermon.bibleVersion || 'ACF',
     isOutline: Boolean(sermon.isOutline),
     duration: sermon.duration || '30',
-    tags: sermon.tags || [],
-    seriesName: sermon.seriesName || '',
+    tags: (sermon.tags || []).filter((t): t is string => typeof t === 'string' && t.trim().length > 0),
+    seriesName: (sermon.seriesName || '').trim(),
     hymns: {
-      abertura: sermon.hymns?.abertura || '',
-      antesMensagem: sermon.hymns?.antesMensagem || '',
-      apelo: sermon.hymns?.apelo || '',
-      encerramento: sermon.hymns?.encerramento || ''
+      abertura: (sermon.hymns?.abertura || '').trim(),
+      antesMensagem: (sermon.hymns?.antesMensagem || '').trim(),
+      apelo: (sermon.hymns?.apelo || '').trim(),
+      encerramento: (sermon.hymns?.encerramento || '').trim()
     },
     isFavorite: Boolean(sermon.isFavorite),
     isArchived: Boolean(sermon.isArchived),
-    updatedAt: sermon.updatedAt || Date.now()
+    updatedAt: Number(sermon.updatedAt) || Date.now()
   };
 
   if (sermon.evaluation) {
     sanitized.evaluation = {
-      faithfulnessScore: sermon.evaluation.faithfulnessScore ?? 0,
+      faithfulnessScore: Number(sermon.evaluation.faithfulnessScore) || 0,
       faithfulnessComment: sermon.evaluation.faithfulnessComment || '',
-      homileticalCoherenceScore: sermon.evaluation.homileticalCoherenceScore ?? 0,
+      homileticalCoherenceScore: Number(sermon.evaluation.homileticalCoherenceScore) || 0,
       coherenceComment: sermon.evaluation.coherenceComment || '',
-      christocentrismScore: sermon.evaluation.christocentrismScore ?? 0,
+      christocentrismScore: Number(sermon.evaluation.christocentrismScore) || 0,
       christocentrismComment: sermon.evaluation.christocentrismComment || '',
-      pastoralClarityScore: sermon.evaluation.pastoralClarityScore ?? 0,
+      pastoralClarityScore: Number(sermon.evaluation.pastoralClarityScore) || 0,
       clarityComment: sermon.evaluation.clarityComment || '',
-      clichesDetected: sermon.evaluation.clichesDetected || [],
-      clichesWithSuggestions: sermon.evaluation.clichesWithSuggestions || [],
+      clichesDetected: (sermon.evaluation.clichesDetected || []).filter((c): c is string => typeof c === 'string'),
+      clichesWithSuggestions: (sermon.evaluation.clichesWithSuggestions || []).map(c => ({
+        cliche: c.cliche || '',
+        suggestion: c.suggestion || '',
+        section: c.section || ''
+      })),
       artificialityWarning: sermon.evaluation.artificialityWarning || '',
       moralismWarning: sermon.evaluation.moralismWarning || '',
-      suggestedImprovements: sermon.evaluation.suggestedImprovements || []
+      suggestedImprovements: (sermon.evaluation.suggestedImprovements || []).filter((s): s is string => typeof s === 'string')
     };
   }
 
   if (sermon.history && sermon.history.length > 0) {
     sanitized.history = sermon.history.map(h => ({
-      id: h.id,
+      id: h.id || ('hist_' + Date.now()),
       date: h.date || '',
       location: h.location || '',
       event: h.event || '',
@@ -459,7 +528,7 @@ export function sanitizeSermonForFirestore(sermon: Sermon, userId?: string): Rec
     }));
   }
 
-  return removeUndefinedFields(sanitized);
+  return cleanUndefinedRecursively(sanitized);
 }
 
 /**
@@ -525,47 +594,92 @@ export async function testFirestoreConnection(overrideUid?: string): Promise<{
 /**
  * Save or Update a single sermon in Firestore across pastoral_sermons collections.
  * Automatically synchronizes changes immediately to other devices.
+ * NUNCA ESCONDE ERROS: qualquer falha na gravação é registrada com detalhes e reportada visualmente.
  */
 export async function saveSermonToCloud(sermon: Sermon, userId?: string): Promise<boolean> {
-  if (!db || isSermonBlank(sermon)) return false;
-  const uid = getEffectiveUid(userId);
-  if (!uid) {
-    const msg = "Usuário não autenticado no Firebase (necessário login para gravar em pastoral_sermons)";
-    setLastFirestoreError(msg);
+  const sermonTitle = sermon?.title || sermon?.scripture || 'Sem título';
+  const sermonId = sermon?.id || 'id_indefinido';
+
+  if (!db) {
+    const errInfo: FirestoreErrorInfo = {
+      code: 'firestore/unavailable',
+      message: 'Instância do banco de dados Firestore não foi inicializada no navegador.',
+      sermonTitle,
+      sermonId,
+      timestamp: Date.now()
+    };
+    notifyFirestoreError(errInfo);
     return false;
   }
+
+  if (!sermon || isSermonBlank(sermon)) {
+    console.warn(`[Firestore] Sermão em branco não gravado na nuvem: ${sermonId}`);
+    return false;
+  }
+
+  const uid = getEffectiveUid(userId);
+  if (!uid) {
+    const errInfo: FirestoreErrorInfo = {
+      code: 'auth/no-user-id',
+      message: 'Identificador do pastor (UID) não definido para salvar no Firestore.',
+      sermonTitle,
+      sermonId,
+      timestamp: Date.now()
+    };
+    notifyFirestoreError(errInfo);
+    return false;
+  }
+
+  const targetPath = `users/${uid}/${PASTORAL_SERMONS_COLLECTION}/${sermon.id}`;
 
   try {
     unmarkSermonAsDeleted(sermon.id);
     const updatedTimestamp = sermon.updatedAt || Date.now();
     const data = sanitizeSermonForFirestore({ ...sermon, updatedAt: updatedTimestamp }, uid);
 
-    // Gravação concorrente nas coleções autorizadas:
-    // 1. users/{uid}/pastoral_sermons/{id}
-    // 2. pastoral_sermons/{id}
-    // 3. users/{uid}/sermons/{id} (compatibilidade regressiva)
-    const writePromises: Promise<void>[] = [
-      setDoc(doc(db, 'users', uid, PASTORAL_SERMONS_COLLECTION, sermon.id), data, { merge: true }),
-      setDoc(doc(db, PASTORAL_SERMONS_COLLECTION, sermon.id), data, { merge: true }),
-      setDoc(doc(db, 'users', uid, SERMONS_COLLECTION, sermon.id), data, { merge: true })
-    ];
+    // 1. Gravação PRINCIPAL OBRIGATÓRIA em users/{uid}/pastoral_sermons/{id}
+    // Não utilizamos Promise.allSettled aqui para não mascarar rejeições!
+    await setDoc(doc(db, 'users', uid, PASTORAL_SERMONS_COLLECTION, sermon.id), data, { merge: true });
 
-    // Limpeza de tombstones se havia sido marcado previamente
-    const tombstoneCleanup: Promise<void>[] = [
-      deleteDoc(doc(db, 'users', uid, TOMBSTONES_COLLECTION, sermon.id)).catch(() => {}),
-      deleteDoc(doc(db, TOMBSTONES_COLLECTION, sermon.id)).catch(() => {})
-    ];
+    // 2. Gravações secundárias para compatibilidade de consultas
+    try {
+      await setDoc(doc(db, 'users', uid, SERMONS_COLLECTION, sermon.id), data, { merge: true });
+    } catch (secErr) {
+      console.warn(`[Firestore] Aviso não impeditivo na coleção secundária users/${uid}/sermons:`, secErr);
+    }
 
-    await Promise.allSettled([...writePromises, ...tombstoneCleanup]);
+    try {
+      await setDoc(doc(db, PASTORAL_SERMONS_COLLECTION, sermon.id), data, { merge: true });
+    } catch (secErr) {
+      console.warn(`[Firestore] Aviso não impeditivo na coleção raiz pastoral_sermons:`, secErr);
+    }
+
+    // 3. Limpeza de tombstones (excluídos prévios com mesmo ID)
+    try {
+      await deleteDoc(doc(db, 'users', uid, TOMBSTONES_COLLECTION, sermon.id));
+      await deleteDoc(doc(db, TOMBSTONES_COLLECTION, sermon.id));
+    } catch {}
 
     setLastFirestoreError(null);
-    recordSyncLog('upload', `Sermão salvo em pastoral_sermons: "${sermon.title || 'Sem título'}"`, `ID: ${sermon.id}`);
+    recordSyncLog('upload', `Sermão salvo em pastoral_sermons: "${sermonTitle}"`, `ID: ${sermon.id}`);
     return true;
   } catch (err: unknown) {
-    const errMsg = (err instanceof Error) ? err.message : String(err);
-    setLastFirestoreError(errMsg);
-    console.error(`[Firestore] Erro ao salvar sermão "${sermon.title}" (${sermon.id}):`, err);
-    recordSyncLog('error', `Erro ao salvar sermão "${sermon.title}": ${errMsg}`);
+    const errorObj = err as { code?: string; message?: string; name?: string };
+    const errorCode = errorObj.code || errorObj.name || 'firestore/save-error';
+    const errorMessage = errorObj.message || (err instanceof Error ? err.message : String(err));
+
+    const errInfo: FirestoreErrorInfo = {
+      code: errorCode,
+      message: errorMessage,
+      sermonTitle,
+      sermonId,
+      path: targetPath,
+      timestamp: Date.now()
+    };
+
+    // Notifica ativamente a interface gráfica e o console, sem esconder erros
+    notifyFirestoreError(errInfo);
+    recordSyncLog('error', `Falha ao salvar sermão "${sermonTitle}" no Firestore: [${errorCode}] ${errorMessage}`);
     return false;
   }
 }

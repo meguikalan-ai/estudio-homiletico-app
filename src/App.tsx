@@ -54,7 +54,9 @@ import {
   purgeModelSermonsFromStorage,
   isModelSermon,
   getLastFirestoreError,
-  FIXED_PASTORAL_UID
+  FIXED_PASTORAL_UID,
+  onFirestoreError,
+  FirestoreErrorInfo
 } from './services/sermonStorage';
 import { 
   createSyncCode, 
@@ -84,7 +86,18 @@ export default function App() {
     error?: string;
   } | null>(null);
   const [isTestingProbe, setIsTestingProbe] = useState<boolean>(false);
+  const [cloudWriteError, setCloudWriteError] = useState<FirestoreErrorInfo | null>(null);
   const isRemoteSyncUpdateRef = useRef<boolean>(false);
+
+  // Ouvinte ativo para erros de gravação com o Firestore - Garante que erros NUNCA sejam escondidos
+  useEffect(() => {
+    const unsubscribe = onFirestoreError((info) => {
+      setCloudWriteError(info);
+      setCloudSyncStatus('error');
+      setCloudSyncMessage(`Falha ao gravar: [${info.code}]`);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // 1. Ouvinte Firestore em Tempo Real para espelhamento automático contínuo com o UID fixo do pastor
   useEffect(() => {
@@ -1166,13 +1179,25 @@ export default function App() {
         if (success) {
           setCloudSyncStatus('synced');
           setCloudSyncMessage('Espelhado em tempo real');
+          setCloudWriteError(null);
         } else {
-          setCloudSyncStatus('synced');
-          setCloudSyncMessage('Espelhado em tempo real');
+          setCloudSyncStatus('error');
+          setCloudSyncMessage('Falha ao espelhar sermão no Firestore');
         }
-      }).catch(() => {
-        setCloudSyncStatus('synced');
-        setCloudSyncMessage('Espelhado em tempo real');
+      }).catch(err => {
+        const errObj = err as { code?: string; message?: string };
+        const code = errObj.code || 'firestore/save-error';
+        const msg = errObj.message || (err instanceof Error ? err.message : String(err));
+        console.error(`[handleGenerateSermon] Erro ao gravar sermão:`, err);
+        setCloudSyncStatus('error');
+        setCloudSyncMessage(`Erro: ${code}`);
+        setCloudWriteError({
+          code,
+          message: msg,
+          sermonTitle: newSermon.title,
+          sermonId: newSermon.id,
+          timestamp: Date.now()
+        });
       });
       
       // Clear inputs
@@ -2146,6 +2171,53 @@ ${activeSermon.pastoralAppeal}
         {/* Content Container */}
         <main className="flex-1 flex flex-col p-4 md:p-8 overflow-y-auto">
           
+          {/* Banner de Erro Visível na Tela ao Gravar no Firestore */}
+          {cloudWriteError && (
+            <div className="mb-6 max-w-7xl mx-auto w-full p-4 bg-red-600/10 rounded-xl border-2 border-red-500/40 text-red-950 text-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in shadow-md">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-red-950 text-sm">
+                      ⚠️ Falha na Gravação com o Firestore na Nuvem
+                    </span>
+                    <span className="font-mono bg-red-200/90 text-red-900 px-2 py-0.5 rounded font-bold text-[11px]">
+                      {cloudWriteError.code}
+                    </span>
+                  </div>
+                  <p className="text-red-900 text-[12px] mt-1 font-medium">
+                    {cloudWriteError.sermonTitle && (
+                      <span className="font-semibold">Sermão: &ldquo;{cloudWriteError.sermonTitle}&rdquo; &bull; </span>
+                    )}
+                    {cloudWriteError.message}
+                  </p>
+                  {cloudWriteError.path && (
+                    <p className="text-red-700 font-mono text-[10px] mt-0.5">
+                      Caminho no Firestore: {cloudWriteError.path}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setShowSyncDiagnosticsModal(true)}
+                  className="bg-red-800 hover:bg-red-900 text-white font-bold px-3 py-1.5 rounded-lg transition-all text-[11px] uppercase tracking-wider select-none cursor-pointer shadow-xs"
+                >
+                  Ver Diagnóstico
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCloudWriteError(null)}
+                  className="text-red-900 hover:text-black font-bold px-2 py-1 rounded hover:bg-red-500/10 transition-all text-[10px] uppercase tracking-wider select-none cursor-pointer"
+                  title="Fechar este aviso"
+                >
+                  ✕ Fechar
+                </button>
+              </div>
+            </div>
+          )}
+
           {generationSuccessNotice && (
             <div className="mb-6 max-w-7xl mx-auto w-full p-4.5 bg-emerald-500/10 rounded-xl border border-emerald-500/25 text-emerald-950 text-xs flex items-center justify-between gap-4 animate-fade-in shadow-xs">
               <div className="flex items-center gap-3">

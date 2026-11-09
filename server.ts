@@ -42,9 +42,9 @@ async function generateJSON(params: {
     throw new Error("Gemini API Client not initialized (Simulation mode).");
   }
 
-  const primaryModel = params.customModel || "gemini-flash-latest";
+  const primaryModel = params.customModel || "gemini-3.1-flash-lite";
   // Dynamic fallback models in sequence to ensure absolute continuation and low latency
-  const modelsToTry = [primaryModel, "gemini-3.8-flash", "gemini-3.1-flash-lite"].filter(
+  const modelsToTry = [primaryModel, "gemini-3.8-flash", "gemini-flash-latest"].filter(
     (m, idx, arr) => arr.indexOf(m) === idx
   );
 
@@ -62,19 +62,19 @@ async function generateJSON(params: {
 
   for (let i = 0; i < modelsToTry.length; i++) {
     const currentModel = modelsToTry[i];
-    const maxRetriesForModel = 2;
+    const maxRetriesForModel = 1;
     let attempt = 0;
 
     while (attempt < maxRetriesForModel) {
       try {
-        console.log(`[generateJSON] Attempting API call with model (${i + 1}/${modelsToTry.length}), attempt ${attempt + 1}/${maxRetriesForModel}: ${currentModel}`);
+        console.log(`[generateJSON] Attempting API call with model (${i + 1}/${modelsToTry.length}): ${currentModel}`);
         
-        // Timeout de segurança de 85s por tentativa para comportar a geração densa e exegética sem interrupção precoce
+        // Timeout de segurança de 45s por tentativa para evitar que a conexão HTTP do navegador fique travada
         let timerId: NodeJS.Timeout | null = null;
         const timeoutPromise = new Promise<never>((_, reject) => {
           timerId = setTimeout(() => {
-            reject(new Error(`Tempo limite excedido na resposta do modelo ${currentModel} após 85s.`));
-          }, 85000);
+            reject(new Error(`Timeout na chamada do modelo ${currentModel} após 45s.`));
+          }, 45000);
         });
 
         const callPromise = ai.models.generateContent({

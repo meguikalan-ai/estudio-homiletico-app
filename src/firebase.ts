@@ -23,13 +23,13 @@ import firebaseConfigJson from '../firebase-applet-config.json';
 const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : ({} as Record<string, string>);
 
 const firebaseConfig = {
-  apiKey: env.VITE_FIREBASE_API_KEY || firebaseConfigJson.apiKey || "",
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigJson.authDomain || "",
-  projectId: env.VITE_FIREBASE_PROJECT_ID || firebaseConfigJson.projectId || "",
-  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigJson.storageBucket || "",
-  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigJson.messagingSenderId || "",
-  appId: env.VITE_FIREBASE_APP_ID || firebaseConfigJson.appId || "",
-  measurementId: env.VITE_FIREBASE_MEASUREMENT_ID || firebaseConfigJson.measurementId || ""
+  apiKey: firebaseConfigJson.apiKey || env.VITE_FIREBASE_API_KEY || "",
+  authDomain: firebaseConfigJson.authDomain || env.VITE_FIREBASE_AUTH_DOMAIN || "",
+  projectId: firebaseConfigJson.projectId || env.VITE_FIREBASE_PROJECT_ID || "",
+  storageBucket: firebaseConfigJson.storageBucket || env.VITE_FIREBASE_STORAGE_BUCKET || "",
+  messagingSenderId: firebaseConfigJson.messagingSenderId || env.VITE_FIREBASE_MESSAGING_SENDER_ID || "",
+  appId: firebaseConfigJson.appId || env.VITE_FIREBASE_APP_ID || "",
+  measurementId: firebaseConfigJson.measurementId || env.VITE_FIREBASE_MEASUREMENT_ID || ""
 };
 
 export const isFirebaseConfigured = Boolean(

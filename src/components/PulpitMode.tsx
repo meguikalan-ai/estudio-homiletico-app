@@ -23,9 +23,12 @@ import {
   Lightbulb, 
   Menu, 
   AlignLeft,
-  ListOrdered
+  ListOrdered,
+  Copy,
+  Check
 } from 'lucide-react';
-import { Sermon } from '../types';
+import { Sermon, DetailedHymn } from '../types';
+import { hydrateHymnsIfLegacy } from '../hymnsData';
 
 interface PulpitModeProps {
   sermon: Sermon;
@@ -64,6 +67,14 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
   const [showQuickIndex, setShowQuickIndex] = useState<boolean>(false);
   const [showHymns, setShowHymns] = useState<boolean>(false);
   const [showControlsBar, setShowControlsBar] = useState<boolean>(true);
+  
+  // Hinários JUERP no Púlpito (Cantor Cristão vs HCC)
+  const hydratedHymns = hydrateHymnsIfLegacy(sermon.hymns);
+  const [activePulpitHinario, setActivePulpitHinario] = useState<'CC' | 'HCC'>(
+    hydratedHymns.preferredHinario === 'HCC' ? 'HCC' : 'CC'
+  );
+  const [expandedOccasion, setExpandedOccasion] = useState<string | null>(null);
+  const [copiedHymn, setCopiedHymn] = useState<string | null>(null);
 
   // 1. Clock updates every second
   useEffect(() => {
@@ -680,41 +691,198 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
 
           </section>
 
-          {/* Section: Hymns Drawer (Hinos Recomendados para o Culto) */}
+          {/* Section: Hymns Drawer (Hinos Recomendados para o Culto - JUERP) */}
           {sermon.hymns && (
-            <section id="pulpit-hymns" className={`p-6 rounded-2xl ${themeStyles.cardBg} space-y-4`}>
-              <div 
-                onClick={() => setShowHymns(!showHymns)}
-                className="flex items-center justify-between cursor-pointer select-none"
-              >
-                <div className="flex items-center gap-2 text-amber-400">
-                  <Music className="w-5 h-5" />
-                  <h3 className="font-bold uppercase tracking-widest text-xs font-sans">
-                    Hinos do Cantor Cristão Recomendados
-                  </h3>
+            <section id="pulpit-hymns" className={`p-6 rounded-2xl ${themeStyles.cardBg} space-y-4 border border-amber-500/20 shadow-xl`}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div 
+                  onClick={() => setShowHymns(!showHymns)}
+                  className="flex items-center gap-2 text-amber-400 cursor-pointer select-none"
+                >
+                  <Music className="w-5 h-5 text-amber-400" />
+                  <div>
+                    <h3 className="font-bold uppercase tracking-widest text-xs font-sans text-amber-300">
+                      Hinos Recomendados para o Culto (JUERP)
+                    </h3>
+                    <p className="text-[11px] text-gray-400 font-sans">
+                      Cantor Cristão e Hinário para o Culto Cristão com letra integral
+                    </p>
+                  </div>
                 </div>
-                <button className="text-gray-400 hover:text-white">
-                  {showHymns ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                </button>
+
+                <div className="flex items-center gap-2">
+                  {/* Alternador de Hinário: CC vs HCC (como versões da Bíblia) */}
+                  <div className="flex items-center bg-black/60 p-1 rounded-xl border border-white/10 text-[11px] font-sans font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setActivePulpitHinario('CC')}
+                      className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                        activePulpitHinario === 'CC'
+                          ? 'bg-amber-500 text-black shadow-xs font-black'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                      title="Cantor Cristão (Edição Oficial JUERP)"
+                    >
+                      Cantor Cristão (CC)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActivePulpitHinario('HCC')}
+                      className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                        activePulpitHinario === 'HCC'
+                          ? 'bg-amber-500 text-black shadow-xs font-black'
+                          : 'text-gray-400 hover:text-white'
+                      }`}
+                      title="Hinário para o Culto Cristão (Edição Oficial JUERP)"
+                    >
+                      HCC (JUERP)
+                    </button>
+                  </div>
+
+                  <button 
+                    onClick={() => setShowHymns(!showHymns)}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 transition-colors"
+                  >
+                    {showHymns ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                  </button>
+                </div>
               </div>
 
               {showHymns && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans pt-2 border-t border-white/10 animate-fade-in">
-                  <div className="p-3 bg-black/40 rounded-xl border border-white/10 space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-gray-400 block">Abertura / Louvor</span>
-                    <p className="font-semibold text-gray-200">{sermon.hymns.abertura}</p>
-                  </div>
-                  <div className="p-3 bg-black/40 rounded-xl border border-white/10 space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-gray-400 block">Antes da Mensagem</span>
-                    <p className="font-semibold text-gray-200">{sermon.hymns.antesMensagem}</p>
-                  </div>
-                  <div className="p-3 bg-black/40 rounded-xl border border-white/10 space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-amber-300 block">Apelo / Decisão</span>
-                    <p className="font-semibold text-amber-100">{sermon.hymns.apelo}</p>
-                  </div>
-                  <div className="p-3 bg-black/40 rounded-xl border border-white/10 space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-gray-400 block">Encerramento</span>
-                    <p className="font-semibold text-gray-200">{sermon.hymns.encerramento}</p>
+                <div className="space-y-4 pt-3 border-t border-white/10 animate-fade-in font-sans">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {(['abertura', 'antesMensagem', 'apelo', 'encerramento'] as const).map((occ) => {
+                      const primary = hydratedHymns.details?.[occ];
+                      const alternate = hydratedHymns.alternateDetails?.[occ];
+                      const hymn: DetailedHymn | undefined = 
+                        (primary?.hinario === activePulpitHinario ? primary :
+                        alternate?.hinario === activePulpitHinario ? alternate : primary) || primary;
+
+                      const occTitles = {
+                        abertura: 'Abertura / Louvor e Adoração',
+                        antesMensagem: 'Antes da Mensagem / Preparação',
+                        apelo: 'Apelo Pastoral / Decisão',
+                        encerramento: 'Encerramento / Envio'
+                      };
+
+                      const isExpanded = expandedOccasion === occ;
+                      const hasCopied = copiedHymn === occ;
+
+                      const handleCopyLyrics = (e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        if (!hymn) return;
+                        const copyPayload = `${hymn.hinario} ${hymn.number} — ${hymn.title} (${hymn.hinarioName})\nAutor: ${hymn.author}\n\n${hymn.fullLyrics}`;
+                        navigator.clipboard.writeText(copyPayload);
+                        setCopiedHymn(occ);
+                        setTimeout(() => setCopiedHymn(null), 2500);
+                      };
+
+                      return (
+                        <div 
+                          key={occ}
+                          className={`p-4 rounded-xl border transition-all ${
+                            occ === 'apelo' 
+                              ? 'bg-amber-950/20 border-amber-500/40 text-amber-50' 
+                              : 'bg-black/40 border-white/10 text-gray-100'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <div>
+                              <span className={`text-[10px] uppercase font-bold tracking-wider block ${
+                                occ === 'apelo' ? 'text-amber-300' : 'text-gray-400'
+                              }`}>
+                                {occTitles[occ]}
+                              </span>
+                              <h4 className="text-sm font-bold text-white flex items-center gap-2 mt-0.5">
+                                <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[11px] font-mono font-bold">
+                                  {hymn ? `${hymn.hinario} ${hymn.number}` : 'Hino'}
+                                </span>
+                                <span>{hymn?.title || 'Sem título'}</span>
+                              </h4>
+                              {hymn?.author && (
+                                <p className="text-[11px] text-gray-400 italic mt-0.5">
+                                  {hymn.author}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={handleCopyLyrics}
+                                title="Copiar letra completa deste hino"
+                                className="px-2.5 py-1 text-[11px] rounded-lg bg-white/10 hover:bg-white/20 text-gray-200 transition-colors flex items-center gap-1 cursor-pointer"
+                              >
+                                {hasCopied ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span className="text-emerald-400 font-bold">Copiado</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3.5 h-3.5" />
+                                    <span>Copiar Letra</span>
+                                  </>
+                                )}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setExpandedOccasion(isExpanded ? null : occ)}
+                                className="p-1 rounded-lg text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 transition-colors cursor-pointer"
+                                title={isExpanded ? 'Ocultar estrofes' : 'Exibir letra completa'}
+                              >
+                                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Se expandido, mostra toda a letra com estrofes e coro */}
+                          {isExpanded && hymn && (
+                            <div className="mt-3 pt-3 border-t border-white/10 space-y-3 font-serif text-sm leading-relaxed text-gray-200 bg-black/30 p-3.5 rounded-lg max-h-72 overflow-y-auto">
+                              {hymn.stanzas.map((stanza, idx) => (
+                                <div key={idx} className="space-y-1">
+                                  <span className="text-[10px] font-sans font-bold text-amber-400 uppercase tracking-wider block">
+                                    Estrofe {idx + 1}
+                                  </span>
+                                  <p className="whitespace-pre-line pl-2 border-l-2 border-white/20">
+                                    {stanza}
+                                  </p>
+                                  {idx === 0 && hymn.chorus && (
+                                    <div className="my-2 p-2.5 rounded bg-amber-500/10 border-l-2 border-amber-400 text-amber-100 font-sans italic text-xs">
+                                      <span className="text-[10px] uppercase font-bold text-amber-300 block not-italic">
+                                        [Coro / Refrão]
+                                      </span>
+                                      <p className="whitespace-pre-line mt-1 font-serif">
+                                        {hymn.chorus}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                              {hymn.crossReference && (
+                                <div className="text-[10px] font-sans text-gray-400 pt-2 border-t border-white/10 flex items-center justify-between">
+                                  <span>Versão correspondente: {hymn.crossReference.hinario} {hymn.crossReference.number}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActivePulpitHinario(hymn.crossReference!.hinario)}
+                                    className="text-amber-400 hover:underline cursor-pointer"
+                                  >
+                                    Alternar para {hymn.crossReference.hinario}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {!isExpanded && hymn && (
+                            <p className="text-xs text-gray-400 line-clamp-1 italic font-serif">
+                              « {hymn.stanzas[0]?.split('\n')[0]}... »
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

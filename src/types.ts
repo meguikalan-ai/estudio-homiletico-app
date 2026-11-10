@@ -34,11 +34,48 @@ export interface ExpositorySeries {
   updatedAt?: number;
 }
 
+export type HinarioType = 'CC' | 'HCC' | 'AMBOS';
+
+export interface DetailedHymn {
+  id: string;
+  hinario: 'CC' | 'HCC';
+  hinarioName: string; // 'Cantor Cristão (JUERP)' | 'Hinário para o Culto Cristão (JUERP)'
+  number: number;
+  title: string;
+  author: string;
+  theme: string;
+  subtheme: string;
+  occasion: 'abertura' | 'antesMensagem' | 'apelo' | 'encerramento';
+  emotionalTone: 'solene' | 'vibrante' | 'contemplativo' | 'alegre' | 'restaurador' | 'decisivo';
+  stanzas: string[];
+  chorus?: string;
+  fullLyrics: string;
+  crossReference?: {
+    hinario: 'CC' | 'HCC';
+    number: number;
+    title: string;
+  };
+  keywords: string[];
+}
+
 export interface SermonHymns {
   abertura: string;
   antesMensagem: string;
   apelo: string;
   encerramento: string;
+  preferredHinario?: HinarioType;
+  details?: {
+    abertura?: DetailedHymn;
+    antesMensagem?: DetailedHymn;
+    apelo?: DetailedHymn;
+    encerramento?: DetailedHymn;
+  };
+  alternateDetails?: {
+    abertura?: DetailedHymn;
+    antesMensagem?: DetailedHymn;
+    apelo?: DetailedHymn;
+    encerramento?: DetailedHymn;
+  };
 }
 
 export interface ExpositoryPoint {

@@ -489,7 +489,10 @@ export function sanitizeSermonForFirestore(sermon: Sermon, userId?: string): Rec
       abertura: (sermon.hymns?.abertura || '').trim(),
       antesMensagem: (sermon.hymns?.antesMensagem || '').trim(),
       apelo: (sermon.hymns?.apelo || '').trim(),
-      encerramento: (sermon.hymns?.encerramento || '').trim()
+      encerramento: (sermon.hymns?.encerramento || '').trim(),
+      preferredHinario: sermon.hymns?.preferredHinario || 'CC',
+      details: sermon.hymns?.details ? cleanUndefinedRecursively(sermon.hymns.details) : null,
+      alternateDetails: sermon.hymns?.alternateDetails ? cleanUndefinedRecursively(sermon.hymns.alternateDetails) : null
     },
     isFavorite: Boolean(sermon.isFavorite),
     isArchived: Boolean(sermon.isArchived),

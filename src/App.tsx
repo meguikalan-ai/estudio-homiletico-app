@@ -19,12 +19,20 @@ import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { PulpitMode } from './components/PulpitMode';
 import { IllustrationGenerator } from './components/IllustrationGenerator';
 import { TheologicalSieve } from './components/TheologicalSieve';
-import { BAPTIST_HYMNS, selectHymnsForSermon, Hymn } from './hymnsData';
+import { 
+  BAPTIST_HYMNS, 
+  selectHymnsForSermon, 
+  buildSermonHymnsRecord,
+  hydrateHymnsIfLegacy,
+  CANTOR_CRISTAO_HYMNS,
+  HCC_HYMNS,
+  Hymn 
+} from './hymnsData';
 import { 
   Sermon, SermonEvaluation, ExpositorySeries, ExpositorySeriesUnit, 
   ThemeSuggestion, CalendarCelebration, CompareVersionText, ExegesisResponse, 
   IllustrationSuggestion, SermonHistoryEntry, PericopeAnalysis, PericopePossibility,
-  VisualIllustration
+  VisualIllustration, HinarioType, DetailedHymn
 } from './types';
 import { TheologicalChat } from './components/TheologicalChat';
 import { BIBLICAL_THEMES_BANK, CHRISTIAN_THEMATIC_CALENDAR, MOCK_STARTER_SERMONS } from './data/pastoralBank';
@@ -507,6 +515,10 @@ export default function App() {
   const [churchProfile, setChurchProfile] = useState<Sermon['churchProfile']>('tradicional');
   const [audience, setAudience] = useState('Membresia em geral - que compreende a igreja reunida abrangendo adolescentes, jovens adultos e anciãos.');
   const [bibleVersion, setBibleVersion] = useState('ACF');
+  const [preferredHinario, setPreferredHinario] = useState<HinarioType>('CC');
+  const [activeWorkspaceHinario, setActiveWorkspaceHinario] = useState<HinarioType>('CC');
+  const [lyricsModalHymn, setLyricsModalHymn] = useState<DetailedHymn | null>(null);
+  const [hymnCopiedId, setHymnCopiedId] = useState<string | null>(null);
   const [isOutline, setIsOutline] = useState(false);
   const [sermonDuration, setSermonDuration] = useState<'20' | '30' | '40' | '60'>('30');
   const [seriesName, setSeriesName] = useState('');
@@ -1135,19 +1147,15 @@ export default function App() {
         setApiFallbackNotice(null);
       }
       
-      // Auto-compute hymns suggestions
-      const hymnsCollection = selectHymnsForSermon(
+      // Auto-compute hymns suggestions exclusivamente da JUERP (Cantor Cristão e HCC)
+      const hymnsSelection = selectHymnsForSermon(
         (data?.title || '') + ' ' + (data?.introduction || '') + ' ' + (data?.theme || ''),
         themeInput || 'Geral',
-        churchProfile
+        churchProfile,
+        preferredHinario
       );
 
-      const formattedHymns = {
-        abertura: `Hino ${hymnsCollection.abertura.number} — ${hymnsCollection.abertura.title} (${hymnsCollection.abertura.theme})`,
-        antesMensagem: `Hino ${hymnsCollection.antesMensagem.number} — ${hymnsCollection.antesMensagem.title} (${hymnsCollection.antesMensagem.theme})`,
-        apelo: `Hino ${hymnsCollection.apelo.number} — ${hymnsCollection.apelo.title} (${hymnsCollection.apelo.theme})`,
-        encerramento: `Hino ${hymnsCollection.encerramento.number} — ${hymnsCollection.encerramento.title} (${hymnsCollection.encerramento.theme})`,
-      };
+      const formattedHymns = buildSermonHymnsRecord(hymnsSelection, preferredHinario);
 
       const newSermon: Sermon = {
         id: 'ser_' + Date.now(),
@@ -1579,6 +1587,26 @@ export default function App() {
       return pBlock;
     }).join('');
 
+    const printHymnsRecord = hydrateHymnsIfLegacy(activeSermon.hymns);
+    const momentsList = [
+      { label: 'Abertura / Louvor', hymn: printHymnsRecord.details?.abertura },
+      { label: 'Antes da Mensagem', hymn: printHymnsRecord.details?.antesMensagem },
+      { label: 'Apelo Pastoral', hymn: printHymnsRecord.details?.apelo },
+      { label: 'Encerramento', hymn: printHymnsRecord.details?.encerramento },
+    ];
+    const hymnsPrintHtml = momentsList.map(m => {
+      const h = m.hymn;
+      if (!h) return '';
+      return `
+        <div style="margin-top: 1rem; margin-bottom: 1.2rem; padding: 14px; background: #FAF8F5; border: 1px solid #E6E2DA; border-radius: 6px; break-inside: avoid; page-break-inside: avoid;">
+          <div style="font-family: 'Inter', sans-serif; font-size: 10pt; font-weight: 700; color: #5A5A40; text-transform: uppercase;">${m.label} &bull; ${h.hinario} ${h.number}</div>
+          <div style="font-family: 'Georgia', serif; font-size: 13pt; font-weight: bold; color: #2D2926; margin: 4px 0;">${h.title}</div>
+          <div style="font-family: 'Inter', sans-serif; font-size: 9.5pt; color: #777; font-style: italic; margin-bottom: 10px;">${h.author} &bull; ${h.hinarioName}</div>
+          <div style="font-family: 'Georgia', serif; font-size: 11pt; line-height: 1.5; color: #222; white-space: pre-line;">${h.fullLyrics}</div>
+        </div>
+      `;
+    }).join('');
+
     const htmlContent = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -1840,6 +1868,13 @@ export default function App() {
       <p style="white-space: pre-line; color: #1F1D1B;">${activeSermon.pastoralAppeal}</p>
     </section>
 
+    <!-- 6. HINOS DO CULTO (JUERP) -->
+    <section style="margin-top: 2rem; border-top: 2px solid #5A5A40; padding-top: 1rem; page-break-inside: auto; break-inside: auto;">
+      <h3 style="color: #5A5A40;">6. HINOS RECOMENDADOS PARA O CULTO (JUERP)</h3>
+      <p style="font-size: 10pt; color: #666; font-family: 'Inter', sans-serif; margin-bottom: 1rem;">Letras oficiais integrais do Cantor Cristão e Hinário para o Culto Cristão (JUERP)</p>
+      ${hymnsPrintHtml}
+    </section>
+
     <!-- DECORATIVE SCREEN-ONLY FOOTER -->
     <div class="sermon-screen-footer" style="margin-top: 3rem; border-top: 1.5px solid #F0ECE4; padding-top: 10px; display: flex; justify-content: space-between; font-family: 'Inter', sans-serif; font-size: 9.5pt; color: #777755; text-transform: uppercase; letter-spacing: 0.8px;">
       <span>Esboço Completo &bull; Pr. Fernando Veiga</span>
@@ -1859,6 +1894,7 @@ export default function App() {
  
   const exportDOCX = () => {
     if (!activeSermon) return;
+    const docxHymns = hydrateHymnsIfLegacy(activeSermon.hymns);
     const content = `
 ${activeSermon.title.toUpperCase()}
 Texto Bíblico: ${activeSermon.scripture}
@@ -1894,6 +1930,20 @@ ${activeSermon.conclusion}
 =======================================
 APELO PASTORAL:
 ${activeSermon.pastoralAppeal}
+
+=======================================
+HINOS RECOMENDADOS PARA O CULTO (JUERP):
+1. Abertura: ${docxHymns.details?.abertura?.hinario} ${docxHymns.details?.abertura?.number} — ${docxHymns.details?.abertura?.title}
+${docxHymns.details?.abertura?.fullLyrics || ''}
+
+2. Antes da Mensagem: ${docxHymns.details?.antesMensagem?.hinario} ${docxHymns.details?.antesMensagem?.number} — ${docxHymns.details?.antesMensagem?.title}
+${docxHymns.details?.antesMensagem?.fullLyrics || ''}
+
+3. Apelo: ${docxHymns.details?.apelo?.hinario} ${docxHymns.details?.apelo?.number} — ${docxHymns.details?.apelo?.title}
+${docxHymns.details?.apelo?.fullLyrics || ''}
+
+4. Encerramento: ${docxHymns.details?.encerramento?.hinario} ${docxHymns.details?.encerramento?.number} — ${docxHymns.details?.encerramento?.title}
+${docxHymns.details?.encerramento?.fullLyrics || ''}
     `;
  
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -1905,6 +1955,7 @@ ${activeSermon.pastoralAppeal}
  
   const copySermonMD = () => {
     if (!activeSermon) return;
+    const mdHymns = hydrateHymnsIfLegacy(activeSermon.hymns);
     const content = `
 # ${activeSermon.title.toUpperCase()}
 **Texto Bíblico:** ${activeSermon.scripture}
@@ -1935,6 +1986,27 @@ ${activeSermon.conclusion}
 
 ## Apelo Pastoral e Decisão Sincera
 ${activeSermon.pastoralAppeal}
+
+## Hinos Recomendados para o Culto (JUERP)
+### 1. Abertura / Louvor: ${mdHymns.details?.abertura?.hinario} ${mdHymns.details?.abertura?.number} — ${mdHymns.details?.abertura?.title} (${mdHymns.details?.abertura?.hinarioName})
+\`\`\`
+${mdHymns.details?.abertura?.fullLyrics || ''}
+\`\`\`
+
+### 2. Antes da Mensagem: ${mdHymns.details?.antesMensagem?.hinario} ${mdHymns.details?.antesMensagem?.number} — ${mdHymns.details?.antesMensagem?.title} (${mdHymns.details?.antesMensagem?.hinarioName})
+\`\`\`
+${mdHymns.details?.antesMensagem?.fullLyrics || ''}
+\`\`\`
+
+### 3. Apelo Pastoral: ${mdHymns.details?.apelo?.hinario} ${mdHymns.details?.apelo?.number} — ${mdHymns.details?.apelo?.title} (${mdHymns.details?.apelo?.hinarioName})
+\`\`\`
+${mdHymns.details?.apelo?.fullLyrics || ''}
+\`\`\`
+
+### 4. Encerramento: ${mdHymns.details?.encerramento?.hinario} ${mdHymns.details?.encerramento?.number} — ${mdHymns.details?.encerramento?.title} (${mdHymns.details?.encerramento?.hinarioName})
+\`\`\`
+${mdHymns.details?.encerramento?.fullLyrics || ''}
+\`\`\`
     `;
 
     navigator.clipboard.writeText(content);
@@ -2613,6 +2685,45 @@ ${activeSermon.pastoralAppeal}
                         <span className="text-[9px] text-[#5A5A40]/80 italic mt-1.5 block">* ACF (Almeida Corrigida Fiel) é priorizada no estúdio batista. AEC (Almeida Edição Contemporânea) disponível.</span>
                       </div>
 
+                      {/* Hinário Oficial JUERP (Cantor Cristão vs HCC) */}
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-600">
+                            Hinário Oficial para o Culto (JUERP)
+                          </label>
+                          <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                            Letras Integrais
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                          {[
+                            { code: 'CC' as HinarioType, label: 'Cantor Cristão (CC)', subtitle: 'Histórico JUERP (577 hinos)' },
+                            { code: 'HCC' as HinarioType, label: 'Culto Cristão (HCC)', subtitle: 'Oficial JUERP (610 hinos)' },
+                            { code: 'AMBOS' as HinarioType, label: 'Ambos / Comparar', subtitle: 'Alternância como Bíblias' }
+                          ].map((item) => (
+                            <button
+                              key={item.code}
+                              type="button"
+                              onClick={() => setPreferredHinario(item.code)}
+                              title={`${item.label} — ${item.subtitle}`}
+                              className={`py-2 px-2 text-center rounded-lg transition-all border cursor-pointer ${
+                                preferredHinario === item.code
+                                  ? 'bg-[#5A5A40] text-white border-[#5A5A40] shadow-xs font-semibold'
+                                  : 'bg-white text-[#2D2926] border-[#E6E2DA] hover:bg-gray-50'
+                              }`}
+                            >
+                              <div className="text-[11px] font-bold leading-tight">{item.label}</div>
+                              <div className={`text-[9px] mt-0.5 ${preferredHinario === item.code ? 'text-white/80' : 'text-gray-400'}`}>
+                                {item.subtitle}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                        <span className="text-[9px] text-[#5A5A40]/80 italic mt-1.5 block">
+                          * Nutre-se exclusivamente de dois hinários: Cantor Cristão e Hinário para o Culto Cristão (JUERP), listando a letra integral (todas as estrofes e coro).
+                        </span>
+                      </div>
+
                       {/* Subsídios Exegéticos & Sementes Homiléticas (Data-Binding com Consultor Teológico) */}
                       <div className="bg-[#FAF8F5] p-3.5 rounded-xl border border-[#5A5A40]/25 space-y-2">
                         <div className="flex justify-between items-center">
@@ -3250,6 +3361,242 @@ ${activeSermon.pastoralAppeal}
                               <h3 className="font-sans uppercase text-xs font-bold tracking-widest text-red-900 border-b border-red-200 pb-1">5. Apelo Pastoral</h3>
                               <p className="whitespace-pre-line text-sm text-rose-950">{activeSermon.pastoralAppeal}</p>
                             </section>
+
+                            {/* 6. HINOS RECOMENDADOS (JUERP) */}
+                            {(() => {
+                              const activeHymnsRecord = hydrateHymnsIfLegacy(activeSermon.hymns);
+                              const occOrder = ['abertura', 'antesMensagem', 'apelo', 'encerramento'] as const;
+                              const occLabels: Record<string, string> = {
+                                abertura: '1. Abertura / Louvor e Adoração',
+                                antesMensagem: '2. Antes da Mensagem / Preparação',
+                                apelo: '3. Apelo Pastoral / Consagração',
+                                encerramento: '4. Encerramento / Poslúdio e Bênção'
+                              };
+
+                              return (
+                                <section className="space-y-4 pt-6 mt-6 border-t-2 border-[#5A5A40]/30 font-sans">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF8F5] p-4 rounded-xl border border-[#5A5A40]/25">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-9 h-9 rounded-xl bg-[#5A5A40] text-white flex items-center justify-center shrink-0 shadow-xs">
+                                        <Music className="w-5 h-5 text-amber-200" />
+                                      </div>
+                                      <div>
+                                        <div className="flex items-center gap-2">
+                                          <h3 className="font-sans uppercase text-xs font-bold tracking-widest text-[#5A5A40]">
+                                            6. Hinos Recomendados para o Culto (JUERP)
+                                          </h3>
+                                          <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded border border-amber-300">
+                                            Letras Integrais Oficiais
+                                          </span>
+                                        </div>
+                                        <p className="text-[11px] text-gray-500 font-sans mt-0.5">
+                                          Nutre-se exclusivamente do Cantor Cristão e Hinário para o Culto Cristão (JUERP) • Alternância como versões da Bíblia
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    {/* Alternador de Hinário (como versões da Bíblia) */}
+                                    <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-[#E6E2DA] shadow-xs self-start sm:self-auto">
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveWorkspaceHinario('CC')}
+                                        className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                                          activeWorkspaceHinario === 'CC'
+                                            ? 'bg-[#5A5A40] text-white shadow-xs'
+                                            : 'text-gray-600 hover:text-black hover:bg-gray-100'
+                                        }`}
+                                        title="Cantor Cristão (Edição Oficial JUERP)"
+                                      >
+                                        Cantor Cristão (CC)
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveWorkspaceHinario('HCC')}
+                                        className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                                          activeWorkspaceHinario === 'HCC'
+                                            ? 'bg-[#5A5A40] text-white shadow-xs'
+                                            : 'text-gray-600 hover:text-black hover:bg-gray-100'
+                                        }`}
+                                        title="Hinário para o Culto Cristão (Edição Oficial JUERP)"
+                                      >
+                                        HCC (JUERP)
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveWorkspaceHinario('AMBOS')}
+                                        className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                                          activeWorkspaceHinario === 'AMBOS'
+                                            ? 'bg-[#5A5A40] text-white shadow-xs'
+                                            : 'text-gray-600 hover:text-black hover:bg-gray-100'
+                                        }`}
+                                        title="Comparar ambos os hinários lado a lado"
+                                      >
+                                        Comparar Ambos
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Grid de Hinos */}
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {occOrder.map((occ) => {
+                                      const primary = activeHymnsRecord.details?.[occ];
+                                      const alternate = activeHymnsRecord.alternateDetails?.[occ];
+
+                                      const renderCard = (hymn: DetailedHymn | undefined, subtitleTag?: string) => {
+                                        if (!hymn) return null;
+                                        const copyKey = `${occ}_${hymn.hinario}_${hymn.number}`;
+                                        const isCopied = hymnCopiedId === copyKey;
+
+                                        const copyHymnLyrics = (e: React.MouseEvent) => {
+                                          e.stopPropagation();
+                                          const payload = `${hymn.hinario} ${hymn.number} — ${hymn.title} (${hymn.hinarioName})\nAutor: ${hymn.author}\nTema: ${hymn.theme}\n\n${hymn.fullLyrics}`;
+                                          navigator.clipboard.writeText(payload);
+                                          setHymnCopiedId(copyKey);
+                                          setTimeout(() => setHymnCopiedId(null), 2500);
+                                        };
+
+                                        return (
+                                          <div 
+                                            key={hymn.id}
+                                            className={`p-4 rounded-xl border flex flex-col justify-between transition-all ${
+                                              occ === 'apelo'
+                                                ? 'bg-rose-50/50 border-rose-200'
+                                                : 'bg-white border-[#E6E2DA]'
+                                            }`}
+                                          >
+                                            <div>
+                                              <div className="flex items-start justify-between gap-2 border-b border-gray-100 pb-2.5">
+                                                <div>
+                                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-black uppercase ${
+                                                      hymn.hinario === 'CC' ? 'bg-[#5A5A40] text-white' : 'bg-amber-800 text-white'
+                                                    }`}>
+                                                      {hymn.hinario} {hymn.number}
+                                                    </span>
+                                                    <span className="text-[10px] font-medium text-gray-500">
+                                                      {subtitleTag || hymn.hinarioName}
+                                                    </span>
+                                                  </div>
+                                                  <h4 className="font-serif text-base font-bold text-gray-900 mt-1">
+                                                    {hymn.title}
+                                                  </h4>
+                                                  <p className="text-[11px] text-gray-500 italic mt-0.5">
+                                                    {hymn.author} &bull; <span className="font-medium text-gray-700">{hymn.theme}</span>
+                                                  </p>
+                                                </div>
+
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                  <button
+                                                    type="button"
+                                                    onClick={copyHymnLyrics}
+                                                    title="Copiar letra completa deste hino"
+                                                    className="px-2.5 py-1 text-[11px] font-sans font-medium rounded-md bg-gray-100 hover:bg-gray-200 text-gray-800 transition-colors flex items-center gap-1 cursor-pointer"
+                                                  >
+                                                    {isCopied ? (
+                                                      <>
+                                                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                                        <span className="text-emerald-700 font-bold">Copiado</span>
+                                                      </>
+                                                    ) : (
+                                                      <>
+                                                        <Copy className="w-3.5 h-3.5 text-gray-500" />
+                                                        <span>Copiar Letra</span>
+                                                      </>
+                                                    )}
+                                                  </button>
+
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setLyricsModalHymn(hymn)}
+                                                    title="Visualizar letra completa em tela cheia (projeção / leitura)"
+                                                    className="p-1 rounded-md text-gray-500 hover:text-black bg-gray-100 hover:bg-gray-200 transition-colors cursor-pointer"
+                                                  >
+                                                    <Maximize2 className="w-3.5 h-3.5" />
+                                                  </button>
+                                                </div>
+                                              </div>
+
+                                              {/* Letra Integral Formatada */}
+                                              <div className="mt-3 space-y-3 font-serif text-xs leading-relaxed text-gray-800 max-h-56 overflow-y-auto pr-1">
+                                                {hymn.stanzas.map((stanza, sIdx) => (
+                                                  <div key={sIdx} className="space-y-0.5">
+                                                    <span className="text-[9px] font-sans font-bold text-[#5A5A40] uppercase tracking-wider block">
+                                                      Estrofe {sIdx + 1}
+                                                    </span>
+                                                    <p className="whitespace-pre-line pl-2 border-l-2 border-[#5A5A40]/30 text-gray-900">
+                                                      {stanza}
+                                                    </p>
+                                                    {sIdx === 0 && hymn.chorus && (
+                                                      <div className="my-2 p-2 rounded bg-amber-50/80 border-l-2 border-amber-500 text-amber-950 font-sans italic text-[11px]">
+                                                        <span className="text-[9px] uppercase font-bold text-amber-800 block not-italic tracking-wider">
+                                                          [Coro / Refrão]
+                                                        </span>
+                                                        <p className="whitespace-pre-line mt-0.5 font-serif">
+                                                          {hymn.chorus}
+                                                        </p>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+
+                                            {/* Referência Cruzada CC <-> HCC */}
+                                            {hymn.crossReference && (
+                                              <div className="mt-3 pt-2 border-t border-gray-100 flex items-center justify-between text-[11px] font-sans text-gray-500">
+                                                <span>
+                                                  Correspondente no {hymn.crossReference.hinario}: <strong>{hymn.crossReference.number} — {hymn.crossReference.title}</strong>
+                                                </span>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setActiveWorkspaceHinario(hymn.crossReference!.hinario)}
+                                                  className="text-[#5A5A40] font-bold hover:underline cursor-pointer flex items-center gap-1"
+                                                >
+                                                  <ArrowRightLeft className="w-3 h-3" />
+                                                  <span>Ver no {hymn.crossReference.hinario}</span>
+                                                </button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      };
+
+                                      if (activeWorkspaceHinario === 'AMBOS') {
+                                        return (
+                                          <div key={occ} className="md:col-span-2 bg-[#FAF8F5] p-3.5 rounded-2xl border border-[#E6E2DA] space-y-2.5">
+                                            <div className="flex items-center justify-between px-1">
+                                              <span className="text-xs font-bold uppercase tracking-wider text-[#5A5A40]">
+                                                {occLabels[occ]}
+                                              </span>
+                                              <span className="text-[10px] text-gray-500 font-sans">
+                                                Comparação Cantor Cristão vs HCC
+                                              </span>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                              {renderCard(primary?.hinario === 'CC' ? primary : alternate, 'Cantor Cristão (JUERP)')}
+                                              {renderCard(primary?.hinario === 'HCC' ? primary : alternate, 'Hinário para o Culto Cristão (JUERP)')}
+                                            </div>
+                                          </div>
+                                        );
+                                      }
+
+                                      const chosenHymn = 
+                                        (primary?.hinario === activeWorkspaceHinario ? primary :
+                                        alternate?.hinario === activeWorkspaceHinario ? alternate : primary) || primary;
+
+                                      return (
+                                        <div key={occ} className="space-y-1">
+                                          <span className="text-[11px] font-bold uppercase tracking-wider text-[#5A5A40] px-1 block">
+                                            {occLabels[occ]}
+                                          </span>
+                                          {renderCard(chosenHymn)}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </section>
+                              );
+                            })()}
                           </div>
                         </div>
 
@@ -5101,6 +5448,102 @@ service cloud.firestore {
               )}
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Leitura e Projeção de Letra Completa (JUERP) */}
+      {lyricsModalHymn && (
+        <div 
+          onClick={() => setLyricsModalHymn(null)}
+          className="fixed inset-0 z-[99998] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#FAF8F5] text-[#2D2926] rounded-2xl max-w-2xl w-full p-6 sm:p-8 max-h-[88vh] overflow-y-auto shadow-2xl border-2 border-[#5A5A40]/30 space-y-5 animate-fade-in relative"
+          >
+            <div className="flex items-start justify-between border-b border-gray-200 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className={`px-2.5 py-0.5 rounded text-xs font-mono font-black uppercase text-white ${
+                    lyricsModalHymn.hinario === 'CC' ? 'bg-[#5A5A40]' : 'bg-amber-800'
+                  }`}>
+                    {lyricsModalHymn.hinario} {lyricsModalHymn.number}
+                  </span>
+                  <span className="text-xs font-semibold text-gray-500 font-sans">
+                    {lyricsModalHymn.hinarioName}
+                  </span>
+                </div>
+                <h3 className="font-serif text-2xl font-bold text-gray-900 mt-1">
+                  {lyricsModalHymn.title}
+                </h3>
+                <p className="text-xs text-gray-500 font-sans italic mt-0.5">
+                  Autor: {lyricsModalHymn.author} &bull; Tema: {lyricsModalHymn.theme}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const text = `${lyricsModalHymn.hinario} ${lyricsModalHymn.number} — ${lyricsModalHymn.title}\nAutor: ${lyricsModalHymn.author}\n\n${lyricsModalHymn.fullLyrics}`;
+                    navigator.clipboard.writeText(text);
+                    setHymnCopiedId('modal_' + lyricsModalHymn.number);
+                    setTimeout(() => setHymnCopiedId(null), 2500);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold font-sans bg-[#5A5A40] text-white hover:bg-[#2D2926] transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  {hymnCopiedId === 'modal_' + lyricsModalHymn.number ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-300" />
+                      <span>Copiado!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Copiar Letra</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLyricsModalHymn(null)}
+                  className="p-1.5 text-gray-400 hover:text-black rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4 font-serif text-base leading-relaxed text-gray-900 pr-1">
+              {lyricsModalHymn.stanzas.map((st, idx) => (
+                <div key={idx} className="space-y-1">
+                  <span className="text-[11px] font-sans font-bold text-[#5A5A40] uppercase tracking-wider block">
+                    Estrofe {idx + 1}
+                  </span>
+                  <p className="whitespace-pre-line pl-3 border-l-2 border-[#5A5A40]/40">
+                    {st}
+                  </p>
+                  {idx === 0 && lyricsModalHymn.chorus && (
+                    <div className="my-3 p-3.5 rounded-xl bg-amber-50 border-l-3 border-amber-600 text-amber-950 font-sans italic text-sm">
+                      <span className="text-[10px] uppercase font-bold text-amber-800 block not-italic tracking-wider">
+                        [Coro / Refrão]
+                      </span>
+                      <p className="whitespace-pre-line mt-1 font-serif text-base">
+                        {lyricsModalHymn.chorus}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-4 border-t border-gray-200 flex items-center justify-between font-sans text-xs text-gray-500">
+              <span>Edição Oficial JUERP • Convenção Batista Brasileira</span>
+              {lyricsModalHymn.crossReference && (
+                <span>Correspondente: {lyricsModalHymn.crossReference.hinario} {lyricsModalHymn.crossReference.number}</span>
+              )}
+            </div>
           </div>
         </div>
       )}

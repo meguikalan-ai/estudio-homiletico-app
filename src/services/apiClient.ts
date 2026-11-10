@@ -100,11 +100,11 @@ export function buildClientFallbackSermon(params: {
     theme: cleanTheme,
     scripture: cleanScripture,
     introduction: `Ao abrirmos as Sagradas Escrituras em ${cleanScripture}, deparamo-nos com uma mensagem que fala diretamente às inquietações mais profundas da alma humana. Em um mundo marcado por pressões e incertezas constantes, a Palavra de Deus se levanta como rocha inabalável, revelando quem Deus é e como o Seu propósito eterno nos alcança e nos sustenta.`,
-    biblicalContext: `O texto sagrado de ${cleanScripture} foi registrado em um contexto histórico em que o povo de Deus enfrentava desafios cruciais de fidelidade, perseverança e compreensão da aliança divina. Longe de ser um conselho moralista abstrato, esta passagem anuncia a soberania e o cuidado redentor do Todo-Poderoso, guiando o coração do crente à esperança viva.`,
+    biblicalContext: `O texto sagrado de ${cleanScripture} foi registrado em um contexto histórico em que o povo de Deus enfrentava desafios cruciais de fidelidade, perseverança e compreensão da aliança divina. Longe de ser um conselho moralista abstrato, esta passagem anuncia a soberania e o cuidado redentor do Todo-Poderoso, guiando o coração do crente à esperança viva. À luz desse cenário, o texto bíblico nos conduz a três verdades fundamentais que transformam a nossa caminhada com Deus.`,
     expositoryPoints: [
       {
         title: 'I. A Soberania da Revelação Divina',
-        precedingTransition: 'O primeiro fundamento que emerge com nitidez desta passagem bíblica é a prioridade da voz de Deus sobre as opiniões humanas.',
+        precedingTransition: 'A primeira verdade que emerge com nitidez desta passagem bíblica é a soberania da revelação divina sobre as incertezas humanas.',
         explanation: '(a) Explicação Textual Profunda: A passagem nos convoca a uma escuta reverente da autoridade das Escrituras, ressaltando que Deus toma a iniciativa de se comunicar com a Sua criação através da verdade eterna e infalível.\n\n(b) Paralelos Escriturísticos: Confirmado em Salmos 119.105 e 2 Timóteo 3.16-17, que atestam a suficiência e a clareza da revelação bíblica.\n\n(c) Cristocentrismo Redentor: Toda a revelação divina converge e se cumpre na pessoa de Jesus Cristo, o Verbo encarnado (João 1.14), nosso supremo Pastor e Senhor.',
         illustration: {
           type: 'cotidiano' as const,
@@ -114,7 +114,7 @@ export function buildClientFallbackSermon(params: {
       },
       {
         title: 'II. O Resgate Redentor e a Suficiência da Graça',
-        precedingTransition: 'Com base nessa revelação, o texto nos conduz ao centro da mensagem evangélica: a redenção operada exclusivamente pela graça.',
+        precedingTransition: 'Firmados nessa primeira verdade, a revelação bíblica avança para uma segunda verdade transformadora: o resgate redentor e a suficiência da graça.',
         explanation: '(a) Explicação Textual Profunda: O texto evidencia a incapacidade humana de salvar a si mesma por obras ou ritos externos, demonstrando que o perdão e a reconciliação brotam do favor soberano e gracioso do Senhor.\n\n(b) Paralelos Escriturísticos: Ecoa com força a proclamação paulina de Romanos 5.8 e Efésios 2.8-9 sobre o dom imerecido da vida eterna.\n\n(c) Cristocentrismo Redentor: É na cruz do Calvário que o Cordeiro de Deus tomou sobre Si a nossa condenação, satisfazendo a justiça do Pai e nos declarando justificados.',
         illustration: {
           type: 'bíblica' as const,
@@ -124,7 +124,7 @@ export function buildClientFallbackSermon(params: {
       },
       {
         title: 'III. O Fruto da Obediência e a Esperança Eterna',
-        precedingTransition: 'Por fim, a mensagem bíblica não nos deixa na inércia, mas convoca a congregação a uma resposta de compromisso sincero.',
+        precedingTransition: 'Por fim, a passagem bíblica coroa esta exposição nos confrontando com uma terceira verdade essencial: o fruto da obediência perseverante e a esperança eterna.',
         explanation: '(a) Explicação Textual Profunda: A fé verdadeira sempre se manifesta em discipulado perseverante, fidelidade na comunidade dos crentes e testemunho corajoso no mundo.\n\n(b) Paralelos Escriturísticos: Confirmado em Tiago 2.17 e Filipenses 1.6, que assegura que Aquele que começou a boa obra haverá de completá-la.\n\n(c) Cristocentrismo Redentor: A ressurreição de Cristo é a garantia inviolável da nossa vitória final sobre a morte, o desânimo e a aflição presente.',
         application: '(d) Aconselhamento e Confronto Pastoral: Não seja um cristão de conveniência domingueira. Engaje-se no discipulado, ame a igreja local, perdoe quem lhe ofendeu e viva hoje com os olhos fixos na eternidade com Cristo.'
       }

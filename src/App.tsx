@@ -2962,7 +2962,7 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
                                         updateActiveSermonField('expositoryPoints', updatedPoints);
                                       }}
                                       className="w-full bg-[#FAF6EE] border border-[#E6DCC5] rounded-xl p-3 text-[#2D2926] leading-relaxed font-sans text-xs focus:ring-0 focus:outline-none focus:border-amber-600 resize-none font-medium mb-3"
-                                      placeholder="Insira a ponte de transição que conduz o ouvinte do bloco anterior a este tópico. (ex: 'O primeiro princípio que emerge desta passagem é...')"
+                                      placeholder="Insira a ponte de transição com vocábulo sincronizado com as divisões. (ex: 'A primeira realidade...', 'A primeira verdade...', 'O primeiro pilar...')"
                                     />
                                   </div>
 

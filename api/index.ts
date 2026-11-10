@@ -280,11 +280,32 @@ Exemplos de Transição Personalizada com Tema:
 - A transição deve preparar o ouvinte para o próximo movimento da mensagem e anteceder o título do ponto, nunca aparecendo tardiamente (isto é, não comece a expor o ponto para só depois colocar a frase de ligação).
 - As transições devem incorporar naturalmente o título do próximo ponto, criando uma sensação de caminhada contínua, onde o ouvinte sente que cada ponto nasce do anterior.
 - Evite totalmente expressões robóticas, enfadonhas ou escolares como: "Vamos ao segundo ponto" ou "Vejamos agora o terceiro ponto".
-- Prefira construções fluidas e elegantes:
-  * MODELO CORRETO PARA O PRIMEIRO PONTO: "O primeiro princípio que emerge desta passagem é a ilusão do controle próprio." -> [Título correspondente: I. A Ilusão do Controle Próprio]
-  * MODELO CORRETO PARA O SEGUNDO PONTO: "Depois de revelar essa verdade, o texto avança para um segundo princípio: a lógica da obediência ao Pai." -> [Título correspondente: II. A Lógica da Obediência ao Pai]
-  * MODELO CORRETO PARA O TERCEIRO PONTO: "Mas a passagem não para aqui. Há ainda uma terceira realidade que precisa ser considerada: a confiança na providência divina." -> [Título correspondente: III. A Confiança na Providência Divina]
-  * Outros termos recomendados para fluidez: "O segundo princípio destacado pelo texto é...", "A próxima verdade apresentada pela passagem é...", "O autor amplia sua argumentação mostrando...", "O texto nos conduz agora a..."
+
+★ REGRA MANDATÓRIA DE SINCRONIZAÇÃO TERMINOLÓGICA DAS PONTES HOMILÉTICAS (OBRIGATÓRIO):
+- As frases de transição (**pontes** entre os tópicos no campo "precedingTransition") DEVEM adotar **ESTRITAMENTE O MESMO VOCÁBULO CONCEITUAL SUBSTANTIVO** utilizado para classificar, titular ou anunciar as divisões no último parágrafo do Contexto Histórico:
+  * Se o sermão desenvolve REALIDADES (ex.: anunciado como "três realidades" ou divisões intituladas como realidades), todas as pontes devem usar o termo "realidade":
+    - Ponto I: "A primeira realidade que o texto sagrado descortina diante de nós é [título do ponto I]."
+    - Ponto II: "Firmados nessa primeira realidade, a passagem nos conduz a uma segunda realidade indispensável: [título do ponto II]."
+    - Ponto III: "Por fim, o texto encerra sua exposição apontando para uma terceira realidade transformadora: [título do ponto III]."
+  * Se o sermão desenvolve VERDADES (ex.: anunciado como "três verdades fundamentais"), todas as pontes devem usar o termo "verdade":
+    - Ponto I: "A primeira verdade que emerge com nitidez desta passagem é [título do ponto I]."
+    - Ponto II: "Depois de contemplarmos essa verdade inicial, a revelação bíblica avança para uma segunda verdade transformadora: [título do ponto II]."
+    - Ponto III: "Por fim, a passagem coroa esta exposição nos confrontando com uma terceira verdade essencial: [título do ponto III]."
+  * Se o sermão desenvolve PILARES (ex.: "três pilares"):
+    - Ponto I: "O primeiro pilar sobre o qual repousa nossa fé é [título do ponto I]."
+    - Ponto II: "Sobre esse alicerce, o texto ergue um segundo pilar inabalável: [título do ponto II]."
+    - Ponto III: "O terceiro pilar que completa essa estrutura de firmeza espiritual é: [título do ponto III]."
+  * Se o sermão desenvolve MARCAS (ex.: "três marcas da fé genuína"):
+    - Ponto I: "A primeira marca evidente de um coração regenerado é [título do ponto I]."
+    - Ponto II: "Uma segunda marca que distingue o verdadeiro discípulo é: [título do ponto II]."
+    - Ponto III: "A terceira marca que sela esta obra da graça é: [título do ponto III]."
+  * Se o sermão desenvolve FUNDAMENTOS: todas as pontes devem usar o termo "fundamento".
+  * Se o sermão desenvolve LIÇÕES: todas as pontes devem usar o termo "lição".
+  * Se o sermão desenvolve ATITUDES ou PASSOS: todas as pontes devem usar "atitude" ou "passo" respectivamente.
+
+★ PROIBIÇÃO EXPRESSA DE TERMOS GENÉRICOS FIXOS:
+- É EXPRESSAMENTE PROIBIDO o uso de termos genéricos fixos como "princípio" nas pontes, A MENOS que a própria divisão ou proposição do sermão utilize explicitamente a palavra "princípio" (ex.: "Três princípios bíblicos para...").
+- É TERMINANTEMENTE PROIBIDO misturar vocábulos conceituais entre as pontes de um mesmo sermão (ex.: chamar o ponto I de "primeiro princípio", o ponto II de "segunda verdade" e o ponto III de "terceira realidade"). A fidelidade e coesão homilética reformada exigem estrita sincronização vocabular em toda a mensagem.
 
 5. CONEXÃO NA CONCLUSÃO:
 A conclusão do sermão deve, de forma clara, retomar e fazer uma síntese que reforce o TÍTULO, o TEMA CENTRAL e as DIVISÕES/PONTOS EXPOSITIVOS desenvolvidos ao longo do sermão. O ouvinte deve perceber nitidamente que a mensagem completou uma jornada lógica estruturada, e agora está sendo conduzido à resposta espiritual.
@@ -385,7 +406,6 @@ O objetivo não é imitar trejeitos de fala, mas reproduzir os valiosos princíp
   Exemplos de títulos: "Erros e acertos de uma pessoa piedosa", "Uma cristã para este tempo", "Arruinando a própria vida", "Um discípulo que acrescenta à vida dos outros".
   Evite títulos genéricos ("Primeiro ponto", "A fé", "A obediência").
 * Cada ponto deve conter: explicação bíblica sob a ótica histórica, análise pastoral da mente humana, confrontação espiritual amorosa e firme, aplicação prática baseada na realidade contemporânea e conexão direta com a vida da igreja local.
-�lise pastoral da mente humana, confrontação espiritual amorosa e firme, aplicação prática baseada na realidade contemporânea e conexão direta com a vida da igreja local.
 
 7. ORALIDADE E LINGUAGEM CONVERSACIONAL:
 * Frases fluidas e preferencialmente mais curtas. Perguntas retóricas inteligentes de forma ocasional, tom caloroso e natural.
@@ -562,7 +582,7 @@ Considere no Perfil da Igreja ("${churchProfile}"):
 
 MANDATÓRIO PARA A ESTRUTURA DOS PONTOS (FLUXO HOMILÉTICO NATURAL, ENRIQUECIMENTO EXEGÉTICO E ESTRUTURA INTERNA EXPANDIDA):
 O sermão deve ser dividido em pontos na chave expositiva bíblica com material denso, encorpado e pronto para a pregação expositiva madura. Cada ponto do sermão deve desenvolver obrigatoriamente:
-1. TRANSIÇÃO ELEGANTE E FLUIDA (campo "precedingTransition"): Frase ponte que conecta organicamente com o ponto anterior ou com o contexto, antecipando o título do próximo ponto sem repetições robotizadas.
+1. TRANSIÇÃO ELEGANTE E FLUIDA COM SINCRONIZAÇÃO TERMINOLÓGICA (campo "precedingTransition"): Frase ponte que conecta organicamente com o ponto anterior ou com o contexto, antecipando o título do próximo ponto sem repetições robotizadas. MANDATÓRIO: A frase de transição DEVE adotar ESTRITAMENTE o mesmo vocábulo conceitual substantivo utilizado para titular ou classificar as divisões do sermão (ex.: se o sermão desenvolve Realidades, use "realidade"; se desenvolve Verdades, use "verdade"; se desenvolve Pilares, use "pilar"; se desenvolve Marcas, use "marca"; se desenvolve Fundamentos, use "fundamento"). É TERMINANTEMENTE PROIBIDO usar termos genéricos fixos como "princípio" nas pontes, a menos que o próprio tópico utilize essa palavra.
 2. EXPOSIÇÃO DO TEXTO & PROFUNDIDADE TEOLÓGICA EXPANDIDA (campo "explanation"): Desenvolvimento robusto contendo nativamente as seguintes 3 subseções ricas:
    (a) Explicação Textual Profunda: Exegese versículo por versículo sob a ótica histórico-gramatical com os termos originais (hebraico/grego koiné transliterados, tempos e modos verbais, nuances de vocabulário e contexto dos destinatários originais).
    (b) Paralelos Escriturísticos: Conexões canônicas com 2 a 3 passagens bíblicas correlatas expressas (Antigo e Novo Testamento) com referência de livro, capítulo e versículo entre parênteses, iluminando a harmonia da revelação divina.
@@ -586,7 +606,7 @@ Retorne um objeto JSON com os seguintes campos exatos de texto:
   "expositoryPoints": [
     {
       "title": "I. Título do Primeiro Ponto",
-      "precedingTransition": "Consistente frase de transição e ligação que antecede e introduz o primeiro ponto de forma natural (ex: 'O primeiro princípio que emerge desta passagem é a ilusão do controle próprio.')",
+      "precedingTransition": "Frase de transição e ligação que antecede e introduz o primeiro ponto de forma natural, adotando ESTRITAMENTE o mesmo vocábulo conceitual das divisões (ex: se as divisões tratam de 'Realidades', use 'A primeira realidade que o texto nos descortina é...'; se 'Verdades', use 'A primeira verdade que emerge desta passagem é...'; se 'Pilares', use 'O primeiro pilar da nossa fé é...'). PROIBIDO usar 'princípio' a menos que as próprias divisões usem a palavra 'princípio'.",
       "explanation": "Desenvolvimento exegético encorpado e substancial, contendo nativamente:\n(a) Explicação Textual Profunda: [análise minuciosa dos versículos com termos originais transliterados no hebraico/grego, tempos verbais e contexto imediato].\n\n(b) Paralelos Escriturísticos: [conexões canônicas com 2-3 passagens bíblicas correlatas com citações de livros e versículos entre parênteses].\n\n(c) Cristocentrismo Redentor: [convergência teológica para a cruz, a justificação pela fé e o Cordeiro de Deus].",
       "illustration": {
         "type": "cotidiano",
@@ -596,7 +616,7 @@ Retorne um objeto JSON com os seguintes campos exatos de texto:
     },
     {
       "title": "II. Título do Segundo Ponto",
-      "precedingTransition": "Frase elegante de transição e ponte que antecede e introduz o segundo ponto, conectando-o suavemente com o ponto anterior (ex: 'Depois de revelar essa verdade, o texto avança para um segundo princípio: a lógica da obediência ao Pai.')",
+      "precedingTransition": "Frase elegante de transição e ponte que antecede e introduz o segundo ponto, conectando-o suavemente com o ponto anterior e mantendo ESTRITAMENTE o mesmo vocábulo conceitual adotado no sermão (ex: 'Firmados nessa primeira verdade/realidade/pilar, a passagem avança para uma segunda verdade/realidade/pilar: ...').",
       "explanation": "Desenvolvimento exegético encorpado e substancial, contendo nativamente:\n(a) Explicação Textual Profunda: [exposição minuciosa do texto com termos originais e análise gramatical/histórica].\n\n(b) Paralelos Escriturísticos: [conexões canônicas essenciais com outras Escrituras].\n\n(c) Cristocentrismo Redentor: [desenvolvimento no Evangelho da graça e na suficiência do sacrifício de Cristo].",
       "illustration": {
         "type": "bíblica",
@@ -606,7 +626,7 @@ Retorne um objeto JSON com os seguintes campos exatos de texto:
     },
     {
       "title": "III. Título do Terceiro Ponto",
-      "precedingTransition": "Frase elegante de transição e ponte que antecede e introduz o terceiro ponto, fazendo a ligação com o anterior (ex: 'Mas a passagem não para aqui. Há ainda uma terceira realidade que precisa ser considerada: a confiança na providência divina.')",
+      "precedingTransition": "Frase elegante de transição e ponte que antecede e introduz o terceiro ponto, fazendo a ligação com o anterior e mantendo ESTRITAMENTE o mesmo vocábulo conceitual adotado no sermão (ex: 'Por fim, a passagem nos confronta com uma terceira verdade/realidade/pilar que precisa ser guardada no coração: ...').",
       "explanation": "Desenvolvimento exegético encorpado e substancial, contendo nativamente:\n(a) Explicação Textual Profunda: [exposição bíblica apurada com vocábulos originais e implicações teológicas].\n\n(b) Paralelos Escriturísticos: [passagens correlatas que confirmam a doutrina].\n\n(c) Cristocentrismo Redentor: [como a fidelidade do Cordeiro sela esta promessa definitiva].",
       "application": "(d) Aconselhamento e Confronto Pastoral: Aplicação vital da verdade do ponto para a igreja local, desafiando a inércia espiritual e convocando a congregação à fidelidade perseverante."
     }
@@ -658,7 +678,7 @@ app.post("/api/gemini/evaluate-sermon", async (req, res) => {
 
   const prompt = `
 Faça uma avaliação homilética e teológica rigorosa do seguinte sermão sob a perspectiva ${sermon.churchProfile === 'neutro' ? 'bíblica e hermenêutica neutra' : 'Batista histórica'}.
-Avalie fidelidade bíblica, coerência e estrutura homilética (especialmente a presença de conexões claras e pontes de transição fluidas entre o Título, Tema, Introdução, Contexto Histórico, Divisões, Conclusão etc.), cristocentrismo, clareza pastoral e aplicações reais. Verifique se as transições e pontes cumprem estritamente a "DIRETRIZ HOMILÉTICA OBRIGATÓRIA: TRANSIÇÕES E PONTES ENTRE AS PARTES DO SERMÃO" (como pontes entre o Título e Introdução, transições apropriadas da Introdução ao Contexto Histórico, a ponte específica no Último Parágrafo do Contexto Histórico e Exegético para introduzir os Pontos Expositivos sem ficar robotizado, conexões de transição entre os pontos expositivos, e a recapitulação integradora do título, tema central e divisões na Conclusão).
+Avalie fidelidade bíblica, coerência e estrutura homilética (especialmente a presença de conexões claras e pontes de transição fluidas entre o Título, Tema, Introdução, Contexto Histórico, Divisões, Conclusão etc.), cristocentrismo, clareza pastoral e aplicações reais. Verifique se as transições e pontes cumprem estritamente a "DIRETRIZ HOMILÉTICA OBRIGATÓRIA: TRANSIÇÕES E PONTES ENTRE AS PARTES DO SERMÃO", avaliando com rigor a SINCRONIZAÇÃO TERMINOLÓGICA DAS PONTES: as frases de transição dos pontos expositivos (campo precedingTransition) devem adotar estritamente o mesmo vocábulo conceitual das divisões (se o sermão desenvolve Realidades, a ponte deve usar "realidade"; se desenvolve Verdades, deve usar "verdade"; se desenvolve Pilares, deve usar "pilar"; se desenvolve Marcas, deve usar "marca"). Aponte falha de coerência homilética se houver o uso de termos genéricos fixos como "princípio" quando as divisões não usam essa palavra.
 
 Ao buscar por clichés, detecte expressões gastas, clichês de internet, termos floreados desnecessários, jargões evangélicos comuns ou transições excessivamente mecânicas e robóticas (como "Vejamos três pontos") que enfraquecem o sermão. Proponha alternativas de termos, construções ou frases que fujam desses clichês e se alinhem a um tom literário maduro, sóbrio, caloroso e inteligente${sermon.churchProfile === 'neutro' || sermon.style === 'biblico' ? ' e bíblico focado em ortodoxia e simplicidade' : ', inspirado no pastor Isaltino Gomes Coelho Filho'}.
 
@@ -1975,6 +1995,61 @@ function getMockImprovedSermon(sermon: any, improvement: string) {
   return s;
 }
 
+function getSynchronizedTransitions(context: string, p1Title: string, p2Title: string, p3Title: string): [string, string, string] {
+  const clean1 = p1Title.replace(/^(i+\.?\s*|1\.\s*)/i, '').trim();
+  const clean2 = p2Title.replace(/^(i+\.?\s*|2\.\s*)/i, '').trim();
+  const clean3 = p3Title.replace(/^(i+\.?\s*|3\.\s*)/i, '').trim();
+
+  const lower = context.toLowerCase();
+  if (lower.includes('realidade')) {
+    return [
+      `A primeira realidade que o texto sagrado descortina diante de nós é ${clean1}.`,
+      `Firmados nessa primeira realidade, a passagem nos conduz a uma segunda realidade indispensável: ${clean2}.`,
+      `Por fim, o texto encerra sua exposição apontando para uma terceira realidade transformadora: ${clean3}.`
+    ];
+  }
+  if (lower.includes('pilar') || lower.includes('pilares')) {
+    return [
+      `O primeiro pilar sobre o qual repousa nossa fé é ${clean1}.`,
+      `Sobre esse alicerce, o texto ergue um segundo pilar inabalável: ${clean2}.`,
+      `O terceiro pilar que completa essa estrutura de firmeza espiritual é ${clean3}.`
+    ];
+  }
+  if (lower.includes('marca')) {
+    return [
+      `A primeira marca evidente de um coração regenerado é ${clean1}.`,
+      `Uma segunda marca que distingue o verdadeiro discípulo é ${clean2}.`,
+      `A terceira marca que sela esta obra da graça é ${clean3}.`
+    ];
+  }
+  if (lower.includes('fundamento')) {
+    return [
+      `O primeiro fundamento inabalável apresentado pelo texto sagrado é ${clean1}.`,
+      `Edificados sobre essa base, encontramos um segundo fundamento indispensável: ${clean2}.`,
+      `O terceiro fundamento que coroa esta mensagem é ${clean3}.`
+    ];
+  }
+  if (lower.includes('liç') || lower.includes('lic')) {
+    return [
+      `A primeira lição que aprendemos desta passagem é ${clean1}.`,
+      `Avançando no texto bíblico, deparamo-nos com uma segunda lição preciosa: ${clean2}.`,
+      `A terceira lição que deve moldar nossa caminhada é ${clean3}.`
+    ];
+  }
+  if (lower.includes('princípio') || lower.includes('principio')) {
+    return [
+      `O primeiro princípio que emerge com nitidez desta passagem é ${clean1}.`,
+      `Depois de contemplarmos esse princípio inicial, a revelação bíblica avança para um segundo princípio indispensável: ${clean2}.`,
+      `Por fim, a passagem nos conduz a um terceiro princípio fundamental: ${clean3}.`
+    ];
+  }
+  return [
+    `A primeira verdade que emerge com nitidez desta passagem é ${clean1}.`,
+    `Depois de contemplarmos essa verdade inicial, a revelação bíblica avança para uma segunda verdade transformadora: ${clean2}.`,
+    `Por fim, a passagem coroa esta exposição nos confrontando com uma terceira verdade essencial: ${clean3}.`
+  ];
+}
+
 function getMockSermon(title: string, theme: string, scripture: string, style: string, churchProfile: string, audience: string, bibleVersion: string, isOutline: boolean, seriesName?: string) {
   const actualTitle = title ? title.trim() : "O Caminho do Senhor e a Luz para o Caminho";
   const actualTheme = theme ? theme.trim() : "A revelação e a herança da Palavra na vida cristã";
@@ -2194,6 +2269,8 @@ Engaje-se ativamente no discipulado pessoal, no testemunho compassivo do Evangel
     p3_expl = `• (a) Explicação Textual: ${p3_expl.split('\n')[1] || p3_expl.split('.')[0]}.\n• (b) Paralelos Escriturísticos: Textos canônicos correlatos.\n• (c) Cristocentrismo Redentor: Vitória eterna selada no sacrifício vicário.`;
   }
 
+  const [t1, t2, t3] = getSynchronizedTransitions(contextText, p1_title, p2_title, p3_title);
+
   return {
     title: actualTitle,
     theme: actualTheme,
@@ -2203,7 +2280,7 @@ Engaje-se ativamente no discipulado pessoal, no testemunho compassivo do Evangel
     expositoryPoints: [
       {
         title: p1_title,
-        precedingTransition: `O primeiro princípio que emerge desta passagem é ${p1_title.replace(/^(i+\.?\s*|1\.\s*)/i, '')}.`,
+        precedingTransition: t1,
         explanation: p1_expl,
         illustration: {
           type: "cotidiano",
@@ -2213,7 +2290,7 @@ Engaje-se ativamente no discipulado pessoal, no testemunho compassivo do Evangel
       },
       {
         title: p2_title,
-        precedingTransition: `Depois de revelar essa verdade, o texto avança para um segundo princípio: ${p2_title.replace(/^(i+\.?\s*|2\.\s*)/i, '')}.`,
+        precedingTransition: t2,
         explanation: p2_expl,
         illustration: {
           type: "bíblica",
@@ -2223,7 +2300,7 @@ Engaje-se ativamente no discipulado pessoal, no testemunho compassivo do Evangel
       },
       {
         title: p3_title,
-        precedingTransition: `Mas a passagem não para aqui. Há ainda uma terceira realidade que precisa ser considerada: ${p3_title.replace(/^(i+\.?\s*|3\.\s*)/i, '')}.`,
+        precedingTransition: t3,
         explanation: p3_expl,
         application: p3_app
       }

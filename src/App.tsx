@@ -35,6 +35,7 @@ import {
   VisualIllustration, HinarioType, DetailedHymn
 } from './types';
 import { TheologicalChat } from './components/TheologicalChat';
+import { SermonLibraryCard } from './components/SermonLibraryModal';
 import { BIBLICAL_THEMES_BANK, CHRISTIAN_THEMATIC_CALENDAR, MOCK_STARTER_SERMONS } from './data/pastoralBank';
 import { 
   saveSermonToCloud, 
@@ -4158,165 +4159,26 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredSermons.length > 0 ? (
                   filteredSermons.map(s => (
-                    <div 
-                      key={s.id} 
-                      className={`bg-white rounded-xl border p-5 flex flex-col justify-between hover:shadow-md transition-all gap-4 ${selectedSermonId === s.id ? 'border-[#5A5A40] ring-1 ring-[#5A5A40]' : 'border-[#E6E2DA]'}`}
-                    >
-                      <div className="space-y-2.5">
-                        <div className="flex justify-between items-start">
-                          <span className="text-[10px] text-gray-400 font-mono">
-                            {new Date(s.date).toLocaleDateString('pt-BR')}
-                          </span>
-                          <div className="flex gap-1.5">
-                            <button
-                              onClick={() => toggleFavoriteSermon(s.id)}
-                              className={`p-1 rounded hover:bg-gray-100 ${s.isFavorite ? 'text-amber-500' : 'text-gray-300'}`}
-                              title="Favorito"
-                            >
-                              ★
-                            </button>
-                          </div>
-                        </div>
-
-                        <div>
-                          <h4 className="font-serif font-bold text-gray-900 text-base leading-tight hover:text-[#5A5A40] cursor-pointer" onClick={() => { setSelectedSermonId(s.id); setActiveTab('workspace'); }}>
-                            {s.title}
-                          </h4>
-                          <p className="text-xs font-serif text-[#5A5A40] font-medium mt-1">{s.scripture}</p>
-                          <p className="text-xs text-gray-600 line-clamp-2 mt-2 leading-snug">{s.theme}</p>
-                        </div>
-
-                        {s.seriesName && (
-                          <span className="inline-block text-[10px] bg-[#5A5A40]/10 text-[#5A5A40] px-2 py-0.5 rounded font-bold">
-                            SÉRIE: {s.seriesName}
-                          </span>
-                        )}
-
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {s.tags.map((tg, tgIdx) => (
-                            <span key={tgIdx} className="text-[9px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
-                              {tg}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Manual Quick Action buttons */}
-                      {sermonIdDeleting === s.id ? (
-                        <div className="pt-3 border-t border-red-200 bg-red-50 p-3 text-xs rounded-lg flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 animate-fade-in w-full text-left">
-                          <span className="text-red-900 font-semibold text-xs leading-tight">Apagar este sermão permanentemente?</span>
-                          <div className="flex items-center gap-2 font-bold text-xs shrink-0 w-full sm:w-auto">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                deleteSermon(s.id);
-                              }}
-                              onTouchEnd={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                deleteSermon(s.id);
-                              }}
-                              className="flex-1 sm:flex-none text-white bg-red-600 hover:bg-red-700 active:bg-red-800 min-h-[44px] px-4 py-2.5 rounded-lg cursor-pointer transition-colors shadow-xs text-center font-bold touch-manipulation select-none flex items-center justify-center gap-1.5"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              <span>Sim, Apagar</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setSermonIdDeleting(null);
-                              }}
-                              onTouchEnd={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setSermonIdDeleting(null);
-                              }}
-                              className="flex-1 sm:flex-none text-gray-700 hover:text-gray-900 border border-gray-300 bg-white hover:bg-gray-100 active:bg-gray-200 min-h-[44px] px-4 py-2.5 rounded-lg cursor-pointer transition-colors text-center font-bold touch-manipulation select-none"
-                            >
-                              Cancelar
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="pt-3 border-t border-gray-100 flex flex-wrap justify-between items-center text-xs w-full gap-2">
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => { setSelectedSermonId(s.id); setActiveTab('workspace'); }}
-                              className="text-[#5A5A40] hover:underline font-bold cursor-pointer py-1"
-                            >
-                              Carregar Estudo
-                            </button>
-                            <span>•</span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setPulpitTargetSermon(s);
-                                setShowPulpitMode(true);
-                              }}
-                              className="text-amber-800 hover:text-amber-950 font-bold flex items-center gap-1 cursor-pointer bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded border border-amber-200"
-                              title="Abrir diretamente no Modo Púlpito"
-                            >
-                              <span>📖 Púlpito</span>
-                            </button>
-                          </div>
-                          
-                          <div className="flex gap-2 text-gray-500 items-center">
-                            <button 
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                duplicateSermon(s);
-                              }} 
-                              className="hover:text-gray-700 cursor-pointer p-1" 
-                              title="Duplicar"
-                            >
-                              Copiar
-                            </button>
-                            <span>•</span>
-                            <button 
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                toggleArchiveSermon(s.id);
-                              }} 
-                              className="hover:text-amber-700 cursor-pointer p-1" 
-                              title="Arquivar"
-                            >
-                              {s.isArchived ? 'Ativar' : 'Arquivar'}
-                            </button>
-                            <span>•</span>
-                            <button 
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setSermonIdDeleting(s.id);
-                              }} 
-                              onTouchEnd={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setSermonIdDeleting(s.id);
-                              }}
-                              className="text-red-700 hover:text-red-900 active:bg-red-100 bg-red-50 sm:bg-transparent px-2.5 py-1.5 rounded-md font-bold cursor-pointer transition-colors touch-manipulation select-none flex items-center gap-1 min-h-[36px]" 
-                              title="Apagar sermão permanentemente"
-                            >
-                              <Trash2 className="w-3.5 h-3.5 text-red-600 inline" />
-                              <span>Apagar</span>
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                    </div>
+                    <SermonLibraryCard
+                      key={s.id}
+                      sermon={s}
+                      isSelected={selectedSermonId === s.id}
+                      isDeleting={sermonIdDeleting === s.id}
+                      onSelect={(sermon) => {
+                        setSelectedSermonId(sermon.id);
+                        setActiveTab('workspace');
+                      }}
+                      onOpenPulpit={(sermon) => {
+                        setPulpitTargetSermon(sermon);
+                        setShowPulpitMode(true);
+                      }}
+                      onDuplicate={(sermon) => duplicateSermon(sermon)}
+                      onToggleFavorite={(id) => toggleFavoriteSermon(id)}
+                      onToggleArchive={(id) => toggleArchiveSermon(id)}
+                      onRequestDelete={(id) => setSermonIdDeleting(id)}
+                      onConfirmDelete={(id) => deleteSermon(id)}
+                      onCancelDelete={() => setSermonIdDeleting(null)}
+                    />
                   ))
                 ) : (
                   <div className="col-span-full bg-white rounded-xl border border-[#E6E2DA] p-16 text-center text-gray-400 italic">

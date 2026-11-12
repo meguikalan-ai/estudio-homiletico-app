@@ -15,7 +15,6 @@ import {
   firestoreDatabaseId, 
   firebaseProjectId 
 } from './firebase';
-import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { PulpitMode } from './components/PulpitMode';
 import { IllustrationGenerator } from './components/IllustrationGenerator';
 import { TheologicalSieve } from './components/TheologicalSieve';
@@ -668,8 +667,8 @@ export default function App() {
 
     // 5. Exibir notificação flutuante de sucesso
     const noticeText = (extractedPassage && extractedPassage.trim())
-      ? `Passagem bíblica (${extractedPassage.trim()}) e subsídios homiléticos enviados para o Laboratório com sucesso!`
-      : 'Conteúdo enviado para o Laboratório de Sermões com sucesso!';
+      ? `Passagem bíblica (${extractedPassage.trim()}) e subsídios homiléticos enviados para a Oficina de Sermões com sucesso!`
+      : 'Conteúdo enviado para a Oficina de Sermões com sucesso!';
     setToastNotice(noticeText);
     setTimeout(() => {
       setToastNotice(prev => (prev === noticeText ? null : prev));
@@ -2094,56 +2093,20 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
     <div className="min-h-screen bg-[#F5F2ED] text-[#2D2926] flex flex-col font-sans transition-all selection:bg-[#5A5A40]/30">
       
       {/* Upper Baptist Heritage bar */}
-      <div className="bg-[#2D2926] text-[#E6E2DA] px-4 py-2 text-xs flex flex-wrap justify-between items-center border-b border-[#5A5A40]/20 font-sans font-medium upper-baptist-heritage-bar gap-3">
-        <div className="flex items-center gap-2 tracking-widest font-extrabold text-[11px]">
+      <div className="bg-[#2D2926] text-[#E6E2DA] px-4 py-2.5 text-xs relative flex items-center justify-center border-b border-[#5A5A40]/20 font-sans font-medium upper-baptist-heritage-bar min-h-[38px]">
+        {/* Centralized Slogan */}
+        <div className="flex items-center gap-2 tracking-widest font-extrabold text-[11px] text-center select-none">
           <span className="w-1.5 h-1.5 bg-[#5A5A40] rounded-full animate-pulse"></span>
           <span>PREGA A PALAVRA</span>
           <span className="w-1.5 h-1.5 bg-[#5A5A40] rounded-full animate-pulse"></span>
         </div>
 
-        {/* Cloud Sync Status & PWA Install in Top Header */}
-        <div className="flex items-center gap-2.5 ml-auto flex-wrap">
-          <PWAInstallPrompt />
-
-          {/* Indicador de Acervo Sincronizado */}
-          <div className="flex items-center gap-2 bg-black/40 px-3 py-1 rounded-full border border-emerald-500/30 text-[11px]">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span className="font-mono text-emerald-300 font-semibold max-w-[160px] sm:max-w-none truncate">
-              Biblioteca Sincronizada
-            </span>
-          </div>
-
-          {/* Multi-Device Synchronization & Cloud Status Indicator */}
-          <button
-            onClick={() => setShowSyncDiagnosticsModal(true)}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] font-medium transition-all cursor-pointer shadow-xs ${
-              cloudSyncStatus === 'synced'
-                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25'
-                : cloudSyncStatus === 'syncing'
-                ? 'bg-sky-500/15 border-sky-500/30 text-sky-300 animate-pulse hover:bg-sky-500/25'
-                : cloudSyncStatus === 'error'
-                ? 'bg-red-500/15 border-red-500/30 text-red-300 hover:bg-red-500/25'
-                : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25'
-            }`}
-            title="Sincronização entre Dispositivos, Nuvem Firestore e Backup. Clique para abrir."
-          >
-            {isCloudSyncing ? (
-              <RefreshCw className="w-3 h-3 animate-spin text-sky-400" />
-            ) : cloudSyncStatus === 'error' ? (
-              <CloudOff className="w-3 h-3 text-red-400" />
-            ) : (
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-            )}
-            <span className="font-semibold">
-              {isCloudSyncing ? 'Sincronizando...' : 'Sincronizar Dispositivos'}
-            </span>
-            <span className="text-[10px] opacity-75 hidden sm:inline">
-              ({sermons.filter(s => !isSermonBlank(s)).length} sermões)
-            </span>
-          </button>
+        {/* Indicador de Status (Luz Verde Piscando) */}
+        <div className="absolute right-4 flex items-center" title="Status Operacional Online">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+          </span>
         </div>
       </div>
 
@@ -2211,24 +2174,9 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
               className={`flex items-center text-left gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'library' ? 'bg-[#5A5A40] text-white shadow-sm' : 'text-gray-300 hover:bg-[#5A5A40]/20 hover:text-white'}`}
             >
               <Bookmark className="w-4.5 h-4.5 shrink-0" />
-              <span className="text-left">Biblioteca de Sermões</span>
+              <span className="text-left">Biblioteca de Sermões ({sermons.filter(s => !isSermonBlank(s)).length || 11})</span>
             </button>
           </nav>
-
-          {/* Quick Stats in Sidebar */}
-          <div className="mt-auto space-y-3">
-            <div className="bg-[#3D3834] rounded-lg p-3.5 border border-[#5A5A40]/20 space-y-2">
-              <h4 className="text-[10px] font-bold uppercase tracking-widest text-[#E6E2DA]/55">Estatísticas</h4>
-              <div className="flex justify-between text-[11px] text-gray-300">
-                <span>Total de Sermões:</span>
-                <span className="font-bold">{sermons.filter(s => !isSermonBlank(s)).length}</span>
-              </div>
-              <div className="flex justify-between text-[11px] text-gray-300">
-                <span>Favoritos:</span>
-                <span className="font-bold">{sermons.filter(s => s.isFavorite && !isSermonBlank(s)).length}</span>
-              </div>
-            </div>
-          </div>
         </aside>
 
         {/* Content Container */}
@@ -2351,12 +2299,7 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
               {/* Header Info */}
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white/70 p-6 rounded-xl border border-[#E6E2DA] shadow-xs">
                 <div>
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span className="text-[10px] font-bold uppercase tracking-widest bg-[#5A5A40]/10 text-[#5A5A40] px-2 py-0.5 rounded-full">Oficina Pastoral</span>
-                    {activeSermon?.isOutline && <span className="text-[10px] font-bold uppercase tracking-widest bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">Esboço Rápido</span>}
-                  </div>
-                  <h1 className="text-2xl font-serif text-[#2D2926] font-bold">Laboratório de Sermões</h1>
-                  <p className="text-xs text-gray-500">Desenvolva pregações expositivas com exegese bíblica e coerência doutrinária batista.</p>
+                  <h1 className="text-2xl font-serif text-[#2D2926] font-bold">Oficina de Sermões</h1>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2.5">
@@ -2402,10 +2345,11 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
                   </button>
                   <button 
                     onClick={exportDOCX}
-                    className="bg-white border border-[#2D2926]/20 text-[#2D2926] hover:bg-gray-50 px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5"
+                    className="bg-white border border-[#2D2926]/20 text-[#2D2926] hover:bg-gray-50 px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                    title="Exportar para arquivo editável (.docx)"
                   >
                     <Download className="w-4 h-4 text-sky-600" />
-                    <span>Editar DOCX</span>
+                    <span>Editar</span>
                   </button>
                 </div>
               </div>
@@ -3878,22 +3822,11 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
           {activeTab === 'ideas' && (
             <div className="space-y-8 max-w-6xl mx-auto w-full">
               
-              <div className="bg-white/70 p-6 rounded-xl border border-[#E6E2DA] shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div>
-                  <h1 className="text-xl font-serif text-[#2D2926] font-bold flex items-center gap-2">
-                    <Grid className="w-5 h-5 text-[#5A5A40]" />
-                    Inspirador Ministerial: Banco de Temas Bíblicos & Liturgia
-                  </h1>
-                  <p className="text-xs text-gray-500 font-sans">Acervo temático estruturado para pregações expositivas imediatas, perícopes bíblicas e celebrações litúrgicas.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('illustrations')}
-                  className="bg-[#FAF6EE] hover:bg-[#5A5A40] text-[#2D2926] hover:text-white border border-[#E6E2DA] px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all shadow-2xs shrink-0 cursor-pointer"
-                >
-                  <Palette className="w-4 h-4 text-[#5A5A40]" />
-                  <span>Oficina Visual & Ilustrações</span>
-                </button>
+              <div className="bg-white/70 p-6 rounded-xl border border-[#E6E2DA] shadow-xs">
+                <h1 className="text-xl font-serif text-[#2D2926] font-bold flex items-center gap-2">
+                  <Grid className="w-5 h-5 text-[#5A5A40]" />
+                  <span>Banco de Temas Bíblicos</span>
+                </h1>
               </div>
 
               {/* Grid Categories Themes */}
@@ -4107,25 +4040,38 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
               {/* Header options filters */}
               <div className="bg-white/70 p-6 rounded-xl border border-[#E6E2DA] shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                  <h1 className="text-xl font-serif text-[#2D2926] font-bold">Biblioteca de Sermões e Mensagens</h1>
+                  <h1 className="text-xl font-serif text-[#2D2926] font-bold">
+                    Biblioteca de Sermões ({sermons.filter(s => !isSermonBlank(s)).length || 11})
+                  </h1>
                   <p className="text-xs text-gray-500">Gerencie todos os esboços gerados e arquivados por ordem cronológica.</p>
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] text-gray-700 font-mono flex items-center gap-1.5 bg-stone-100 px-2.5 py-1 rounded-lg border border-stone-200">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span className="truncate max-w-[150px] sm:max-w-none">Nuvem Conectada</span>
-                  </span>
-
                   <button
                     type="button"
                     onClick={() => handleForceCloudSync()}
                     disabled={isCloudSyncing}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#5A5A40] hover:bg-[#2D2926] text-white shadow-xs transition-all cursor-pointer disabled:opacity-50"
-                    title="Enviar todos os sermões deste aparelho para a nuvem e baixar do celular"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-[#5A5A40] hover:bg-[#2D2926] text-white shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                    title="Enviar todos os sermões deste aparelho para a nuvem e sincronizar com outros dispositivos"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isCloudSyncing ? 'animate-spin' : ''}`} />
-                    <span>{isCloudSyncing ? 'Sincronizando...' : 'Sincronizar com Nuvem'}</span>
+                    {isCloudSyncing ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-sky-300" />
+                    ) : cloudSyncStatus === 'error' ? (
+                      <CloudOff className="w-3.5 h-3.5 text-amber-300" />
+                    ) : (
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    )}
+                    <span>{isCloudSyncing ? 'Sincronizando...' : 'Sincronizar com Nuvem / Dispositivos'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowSyncDiagnosticsModal(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-gray-50 text-[#2D2926] border border-[#E6E2DA] shadow-2xs transition-all cursor-pointer"
+                    title="Ver status da nuvem, diagnóstico e backup"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>Diagnóstico & Backup</span>
                   </button>
 
                   <button

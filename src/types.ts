@@ -139,7 +139,7 @@ export interface ThemeSuggestion {
 
 export interface IllustrationSuggestion {
   title: string;
-  type: 'bíblica' | 'cotidiano' | 'histórica' | 'pastoral' | 'evangelística';
+  type: 'bíblica' | 'cotidiano' | 'histórica' | 'pastoral' | 'evangelística' | 'parabólica' | 'natureza' | string;
   story: string;
   moral: string;
 }

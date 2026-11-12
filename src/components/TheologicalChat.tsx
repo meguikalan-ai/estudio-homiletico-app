@@ -11,7 +11,7 @@ const INITIAL_MESSAGES: TheologicalChatMessage[] = [
   {
     id: 'welcome-msg',
     role: 'assistant',
-    content: 'A paz do Senhor, pastor! Sou o seu Consultor Teológico & Hermenêutico Sênior no "Estúdio Homilético Batista — Pastor Fernando Veiga". Minha fundação doutrinária e exegética é estritamente alinhada às Sagradas Escrituras, à Segunda Confissão Batista de Londres de 1689, à herança Reformada clássica e à catolicidade histórica da Igreja de Cristo — desde a Didaché, os Padres Apostólicos, os Credos Ecumênicos e os grandes Doutores da Antiguidade até os Reformadores, Puritanos e Batistas Históricos.\n\nComo posso auxiliá-lo hoje em suas pesquisas exegéticas, análise minuciosa dos originais em grego e hebraico, consulta aos grandes mestres da história da igreja ou na resolução de dilemas teológicos e contemporâneos?',
+    content: 'A paz do Senhor, pastor! Sou o seu Consultor Bíblico e Teológico no "Estúdio Homilético Batista — Pastor Fernando Veiga". Minha fundação doutrinária e exegética é estritamente alinhada às Sagradas Escrituras, à Segunda Confissão Batista de Londres de 1689, à herança Reformada clássica e à catolicidade histórica da Igreja de Cristo — desde a Didaché, os Padres Apostólicos, os Credos Ecumênicos e os grandes Doutores da Antiguidade até os Reformadores, Puritanos e Batistas Históricos.\n\nComo posso auxiliá-lo hoje em suas pesquisas exegéticas, análise minuciosa dos originais em grego e hebraico, consulta aos grandes mestres da história da igreja ou na resolução de dilemas teológicos e contemporâneos?',
     timestamp: Date.now(),
     exegesisData: {
       passageReference: 'Romanos 5:1',
@@ -310,15 +310,9 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
             <BookOpen className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-base font-serif font-bold text-[#2D2926] flex items-center gap-2 flex-wrap sm:flex-nowrap">
-              <span>Consultor Teológico & Hermenêutico Sênior</span>
-              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-sans px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                1689 Confession • Patrística • Credos
-              </span>
+            <h2 className="text-base font-serif font-bold text-[#2D2926]">
+              Consultor Bíblico e Teológico
             </h2>
-            <p className="text-xs text-gray-500 font-sans">
-              Pr. Fernando Veiga • Escrituras Sagradas, Catolicidade Histórica (Didaché, Padres Apostólicos, Credos Ecumênicos e Doutores da Igreja), 2ª Confissão Batista de Londres de 1689 e Hermenêutica Histórico-Gramatical.
-            </p>
           </div>
         </div>
 
@@ -370,7 +364,7 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
                       <div className="flex items-center gap-2 flex-wrap">
                         <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#5A5A40]">
                           <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                          <span>Consultor Teológico & Hermenêutico Sênior</span>
+                          <span>Consultor Bíblico e Teológico</span>
                         </div>
                         {(() => {
                           const msgIdx = messages.findIndex(m => m.id === msg.id);
@@ -404,8 +398,8 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
                                 : undefined;
                               const passRef = extractScriptureFromStudy(msg, userQ);
                               return passRef
-                                ? `Transferir passagem (${passRef}) e subsídios para o Laboratório de Sermões`
-                                : "Transferir exegese e sementes homiléticas diretamente para o Laboratório de Sermões";
+                                ? `Transferir passagem (${passRef}) e subsídios para a Oficina de Sermões`
+                                : "Transferir exegese e sementes homiléticas diretamente para a Oficina de Sermões";
                             })()}
                             aria-label="Usar no Sermão"
                           >

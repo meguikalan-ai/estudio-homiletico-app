@@ -60,6 +60,32 @@ const STARTER_ILLUSTRATIONS: VisualIllustration[] = [
     aspectRatio: '16:9',
     colorTone: 'Azul Noturno & Dourado Celestial',
     createdAt: Date.now() - 3600000 * 4
+  },
+  {
+    id: 'starter-4',
+    title: 'A Fortaleza dos Dois Portões',
+    type: 'parabólica',
+    scripture: 'Mateus 7:13-14',
+    story: 'Em tempos remotos, um arquiteto real ergueu uma fortaleza inexpugnável no alto de uma escarpa com dois portões distintos: o Portão da Ostentação, largo e folheado a ouro reluzente, e o Portão da Humildade, estreito e talhado em rocha bruta. Durante o cerco inimigo, os nobres correram apressados para o portão dourado carregando seus baús de riqueza, apenas para descobrirem que sua largura facilitara a invasão das catapultas. Os peregrinos e simples que entraram pelo portão estreito e abandonaram suas cargas encontraram refúgio protegido nas câmaras mais profundas da rocha.',
+    moral: 'O Reino de Deus não se abre aos que chegam inflados por sua justiça própria ou méritos terrenos. Apenas os que se despojam da soberba e entram pela porta estreita da cruz encontram segurança eterna sob o amparo do Rei.',
+    visualPrompt: 'Composição alegórica monumental no estilo Gravura Sacra Antiga. Cidadela de pedra antiga no cume de monte escarpado, portão estreito de rocha talhada banhado por luz dourada suave, contraste límpido de atmosfera atemporal, proporção 16:9.',
+    visualStyle: 'Gravura Sacra Antiga (Gustave Doré)',
+    aspectRatio: '16:9',
+    colorTone: 'Tons Terrosos & Âmbar Sacro',
+    createdAt: Date.now() - 3600000 * 2
+  },
+  {
+    id: 'starter-5',
+    title: 'O Voo do Falcão e a Lei Invisível',
+    type: 'natureza',
+    scripture: 'Isaías 40:28-31',
+    story: 'Na vastidão das estepes, os ornitólogos observam há séculos o voo soberano do falcão-peregrino, ave que atinge velocidades espantosas em mergulho sem quebrar suas asas delgadas. Mas o maior prodígio não está no bater vigoroso de suas penas, e sim na submissão instintiva às correntes térmicas invisíveis que sobem dos desfiladeiros: se a ave tentar subir na força de seus próprios músculos, ela despenca de cansaço. Ela foi desenhada para repousar no sopro do vento que não vê.',
+    moral: 'Se o Criador governa as forças invisíveis da atmosfera para sustentar as aves do céu em seu voo arrojado, quanto mais sustentará os Seus filhos nas tempestades da existência? O crente não vive pela ansiedade do que vê, mas descansa no governo soberano do Deus que sustenta todas as coisas.',
+    visualPrompt: 'Cena da natureza no estilo minimalista. Falcão majestoso de asas abertas planando em céu aberto sobre cânions dourados pela luz solar da tarde, sensação de grandeza cósmica e equilíbrio natural, proporção 16:9.',
+    visualStyle: 'Minimalismo Editorial & Púlpito',
+    aspectRatio: '16:9',
+    colorTone: 'Tons Terrosos & Âmbar Sacro',
+    createdAt: Date.now() - 3600000 * 1
   }
 ];
 
@@ -76,14 +102,14 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [formData, setFormData] = useState<{
     topic: string;
-    type: 'cotidiano' | 'bíblica' | 'histórica' | 'pastoral' | 'evangelística';
+    type: VisualIllustration['type'];
     scripture: string;
     pastoralFocus: string;
     visualStyle: string;
     aspectRatio: '16:9' | '1:1' | '4:3' | '9:16';
   }>({
     topic: '',
-    type: 'bíblica',
+    type: 'histórica',
     scripture: '',
     pastoralFocus: 'Fé e Confiança',
     visualStyle: 'Gravura Sacra Antiga (Gustave Doré)',
@@ -186,10 +212,10 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
     showToast('Ilustração removida do acervo.');
   };
 
-  // SOBER HOMILETICAL FALLBACK GENERATOR (Strictly adheres to Isaltino Gomes oral sobriety & Baptist theology)
+  // SOBER HOMILETICAL FALLBACK GENERATOR (Strictly adheres to oral sobriety, pulpit storytelling & Baptist theology)
   const generateFallback = (params: {
     topic: string;
-    type: 'cotidiano' | 'bíblica' | 'histórica' | 'pastoral' | 'evangelística';
+    type: VisualIllustration['type'];
     scripture?: string;
     pastoralFocus?: string;
     visualStyle?: string;
@@ -198,7 +224,6 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
     const { topic, type, scripture, pastoralFocus, visualStyle, aspectRatio } = params;
     const style = visualStyle || 'Gravura Sacra Antiga (Gustave Doré)';
     const ratio = aspectRatio || '16:9';
-    const focus = pastoralFocus || 'Fidelidade e Confiança';
     const sc = scripture || (type === 'bíblica' ? 'Gênesis 12:1-4' : 'Salmos 37:5');
 
     let title = topic;
@@ -206,16 +231,26 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
     let moral = '';
     let visualPrompt = '';
 
-    if (type === 'bíblica') {
+    if (type === 'histórica') {
+      title = `${topic}: A Chama que Não se Apaga`;
+      story = `Numa pequena oficina gráfica clandestina do século XVI na Europa, um impressor artesanal passava as madrugadas compondo tipos móveis de chumbo para imprimir o texto bíblico na linguagem do povo comum. Sabia que a descoberta de sua prensa significaria a perda de seus bens e a condenação. Ao ser questionado sobre por que arriscava a vida por meras folhas de papel, ele apenas apontou para o texto aberto e respondeu: 'Os homens deste século passarão; a Palavra do nosso Deus permanece para sempre'.`;
+      moral = `O testemunho e o sacrifício de servos fiéis do passado nos lembram de que a verdade do Evangelho não é herança negociável, mas tesouro sagrado a ser guardado e proclamado com santa coragem no púlpito e na vida.`;
+      visualPrompt = `Cena de oficina antiga no estilo ${style}. Uma mesa de carvalho rústica iluminada pela luz dourada de uma lamparina de azeite, tipos de imprensa móveis e fólios com texto bíblico antigo, contraste de sombras profundas, atmosfera solene, proporção ${ratio}.`;
+    } else if (type === 'parabólica') {
+      title = `${topic}: A Fortaleza dos Dois Portões`;
+      story = `Em tempos remotos, um arquiteto real ergueu uma fortaleza inexpugnável no alto de uma escarpa com dois portões distintos: o Portão da Ostentação, largo e folheado a ouro reluzente, e o Portão da Humildade, estreito e talhado em rocha bruta. Durante o cerco inimigo, os nobres correram apressados para o portão dourado carregando seus baús de riqueza, apenas para descobrirem que sua largura facilitara a invasão das catapultas. Os peregrinos e simples que entraram pelo portão estreito e abandonaram suas cargas encontraram refúgio protegido nas câmaras mais profundas da rocha.`;
+      moral = `O Reino de Deus não se abre aos que chegam inflados por sua justiça própria ou méritos terrenos. Apenas os que se despojam da soberba e entram pela porta estreita da cruz encontram segurança eterna sob o amparo do Rei.`;
+      visualPrompt = `Composição alegórica monumental no estilo ${style}. Cidadela de pedra antiga no cume de monte escarpado, portão estreito de rocha talhada banhado por luz dourada suave, contraste límpido de atmosfera atemporal, proporção ${ratio}.`;
+    } else if (type === 'natureza') {
+      title = `${topic}: O Voo do Falcão e a Lei Invisível`;
+      story = `Na vastidão das estepes, os ornitólogos observam há séculos o voo do falcão-peregrino, ave capaz de despencar dos céus a mais de trezentos quilômetros por hora em busca de seu alvo sem perder a precisão milimétrica de suas asas. Mas o mistério não reside na velocidade vertiginosa, e sim na obediência instintiva às correntes térmicas invisíveis que o sustentam: se a ave tentar voar contra o fluxo de sustentação unicamente na força de suas penas, seus músculos entram em colapso. Ela é desenhada para repousar no vento que não vê.`;
+      moral = `Se o Criador governa as forças invisíveis da atmosfera para sustentar as aves do céu em seu voo arrojado, quanto mais sustentará os Seus filhos nas tempestades da existência? O crente não vive pela ansiedade do que vê, mas descansa no governo soberano do Deus que sustenta todas as coisas.`;
+      visualPrompt = `Cena da natureza no estilo ${style}. Falcão majestoso de asas abertas planando em céu aberto sobre cânions dourados pela luz solar da tarde, sensação de grandeza cósmica e equilíbrio natural, proporção ${ratio}.`;
+    } else if (type === 'bíblica') {
       title = topic.toLowerCase().includes('fé') ? topic : `${topic}: A Jornada da Fé e da Promessa`;
       story = `Quando o patriarca ouviu a voz de Deus ordenando que deixasse a segurança de sua parentela rumo a uma terra desconhecida (${sc}), ele não possuía mapas ou alianças humanas de proteção. Tinha unicamente a palavra do Criador. Sob as noites caladas do deserto, contemplando a imensidão do firmamento estrelado, ele aprendeu que o solo mais firme para os passos do crente é a fidelidade daquele que prometeu.`;
       moral = `A mensagem bíblica não nos convoca a decifrar todas as curvas do amanhã com ansiedade, mas a repousar o coração na soberania de quem governa a história. A fé caminha com os olhos postos na promessa de Deus.`;
       visualPrompt = `Composição bíblica monumental no estilo ${style}. Figura solitária em manto sóbrio de peregrino contemplando um céu noturno límpido salpicado de estrelas no deserto pedregoso da Antiguidade, iluminação solene chiaroscuro com tons de âmbar e azul profundo, proporção ${ratio}.`;
-    } else if (type === 'histórica') {
-      title = `${topic}: A Chama que Não se Apaga`;
-      story = `Numa pequena oficina gráfica clandestina do século XVI na Europa, um impressor artesanal passava as madrugadas compondo tipos móveis de chumbo para imprimir o texto bíblico na linguagem do povo comum. Sabia que a descoberta de sua prensa significaria a perda de seus bens e a condenação. Ao ser questionado sobre por que arriscava a vida por meras folhas de papel, ele apenas apontou para o texto aberto e respondeu: 'Os homens deste século passarão; a Palavra do nosso Deus permanece para sempre'.`;
-      moral = `O testemunho e o sacrifício de servos fiéis do passado nos lembram de que a verdade do Evangelho não é herança negociável, mas tesouro sagrado a ser guardado e proclamado com santa coragem.`;
-      visualPrompt = `Cena de oficina antiga no estilo ${style}. Uma mesa de carvalho rústica iluminada pela luz dourada de uma lamparina de azeite, tipos de imprensa móveis e fólios com texto bíblico antigo, contraste de sombras profundas, atmosfera solene, proporção ${ratio}.`;
     } else if (type === 'pastoral') {
       title = `${topic}: O Resgate do Bom Pastor`;
       story = `Nas montanhas escarpadas do Oriente, quando uma ovelha se desgarra e cai em uma fenda de espinhos entre as rochas, seus movimentos desesperados só aumentam a dor e o sangramento. O pastor que conhece cada membro do rebanho não se aproxima com gritos ásperos ou cajadadas de ira. Ele apoia o cajado firme na pedra, dobra os joelhos na poeira, desenlaça com dedos firmes e pacientes as pontas agudas e deita a ovelha machucada sobre os próprios ombros para o retorno ao aprisco.`;
@@ -230,7 +265,7 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
       // cotidiano
       title = `${topic}: A Semeadura Silenciosa e a Paciência do Lavrador`;
       story = `Um agricultor experiente deposita sementes no solo escuro da lavoura antes das primeiras chuvas da estação. Durante semanas a fio, quem olha para a superfície não enxerga nenhuma alteração. Mas ele não remove a terra todos os dias para conferir se a raiz brotou; ele sabe que o milagre da vida acontece em silêncio nas profundezas antes de romper a crosta e desabrochar em espigas verdes de trigo ao sol.`;
-      moral = `Na economia da graça, Deus opera com paciência sábia e invisível. O labor honesto da oração, da integridade e do discipulado nem sempre oferece resultados imediatos para os olhos humanos, mas a colheita virá no tempo perfeito do Pai.`;
+      moral = `Na economia da graça, Deus opera com paciência sábia e invisível. O labor honesto da oração, da integridade e do discipulado no lar e no trabalho nem sempre oferece resultados imediatos para os olhos humanos, mas a colheita virá no tempo perfeito do Pai.`;
       visualPrompt = `Cena campestre contemplativa no estilo ${style}. Campo arado sob a luz suave de uma alvorada dourada, mãos calejadas de lavrador soltando grãos de semente sobre a terra preta fértil, linhas de perspectiva limpas, proporção ${ratio}.`;
     }
 
@@ -429,11 +464,13 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
                     }))}
                     className="w-full px-3 py-2 text-xs bg-[#FAF6EE] border border-[#E6E2DA] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5A5A40] text-[#2D2926] capitalize"
                   >
-                    <option value="bíblica">Bíblica</option>
-                    <option value="cotidiano">Cotidiano</option>
-                    <option value="histórica">Histórica</option>
-                    <option value="pastoral">Pastoral</option>
-                    <option value="evangelística">Evangelística</option>
+                    <option value="histórica">Histórica (Mártires, Reforma, Biografias)</option>
+                    <option value="cotidiano">Cotidiana (Lar, Trabalho, Vida Moderna)</option>
+                    <option value="parabólica">Ficção / Parabólica (Alegorias & Parábolas)</option>
+                    <option value="natureza">Científica / Natureza (Criação & Leis Naturais)</option>
+                    <option value="bíblica">Bíblica (Alianças & Narrativas)</option>
+                    <option value="pastoral">Pastoral (Cuidado & Consolo)</option>
+                    <option value="evangelística">Evangelística (Resgate & Chamado)</option>
                   </select>
                 </div>
 
@@ -547,7 +584,7 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
                   ) : (
                     <>
                       <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                      <span>Gerar Ilustração Narrativa</span>
+                      <span>Gerar Nova Ilustração</span>
                     </>
                   )}
                 </button>
@@ -576,10 +613,10 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
             <button
               onClick={() => setIsCreateModalOpen(true)}
               className="bg-[#5A5A40] hover:bg-[#2D2926] text-white px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs whitespace-nowrap"
-              title="Criar nova história ou metáfora pastoral"
+              title="Criar nova história ou argumento homilético"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>Gerar Nova Ilustração/Metáfora Narrativa</span>
+              <span>Gerar Nova Ilustração</span>
             </button>
           </div>
 
@@ -598,7 +635,7 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
 
             {/* Category filter pills */}
             <div className="flex items-center gap-1 overflow-x-auto py-1">
-              {(['todos', 'cotidiano', 'bíblica', 'histórica', 'pastoral', 'evangelística'] as const).map(cat => (
+              {(['todos', 'histórica', 'cotidiano', 'parabólica', 'natureza', 'bíblica', 'pastoral', 'evangelística'] as const).map(cat => (
                 <button
                   key={cat}
                   onClick={() => setFilterType(cat)}
@@ -608,7 +645,7 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
                       : 'bg-white text-gray-600 hover:bg-gray-50 border-[#E6E2DA]'
                   }`}
                 >
-                  {cat}
+                  {cat === 'cotidiano' ? 'Cotidiana' : cat === 'parabólica' ? 'Parabólica' : cat === 'natureza' ? 'Natureza/Ciência' : cat}
                 </button>
               ))}
             </div>

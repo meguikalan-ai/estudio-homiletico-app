@@ -1717,44 +1717,58 @@ Retorne estritamente o JSON estruturado do publishSchema.
 
 
 
-// 6. Illustration & Visual Composition Generator
+// 6. Illustration & Visual Composition Generator (Pulpit Narratives & Homiletical Arguments)
 app.post("/api/gemini/generate-illustrations", async (req, res) => {
-  const { topic, type, scripture, visualStyle, aspectRatio, colorTone } = req.body;
+  const { topic, type, scripture, visualStyle, aspectRatio, colorTone, pastoralFocus } = req.body;
 
   if (!ai) {
     return res.json(getMockIllustrations(topic, type, scripture, visualStyle, aspectRatio, colorTone));
   }
 
   const prompt = `
-Você é o Consultor Homilético e Diretor de Arte Sacra do Estúdio Homilético Batista.
-Gere ilustrações pastorais relevantes e comoventes, adequadas para pregações em igreja local sobre o tema: "${topic || "Graça e Redenção"}".
-${scripture ? `Passagem Bíblica associada: "${scripture}".` : ''}
-Tipo solicitado: ${type || "todas"} (bíblicas, cotidiano, históricas, pastorais ou evangelísticas).
-Estilo visual preferencial: ${visualStyle || "Gravura Clássica Sacra / Óleo Barroco"}.
-Proporção visual pretendida: ${aspectRatio || "16:9"}.
-${colorTone ? `Paleta de cores litúrgica: ${colorTone}.` : ''}
+Você é um Homilético de Púlpito Sênior e Mestre em Retórica Sagrada Reformada, especialista na arte de narrativas orais e argumentos homiléticos inspirados na tradição bíblica clássica e na sobriedade pastoral (como Charles Spurgeon, Martyn Lloyd-Jones e Isaltino Gomes).
 
-Lembre-se:
-- Evite artificialismos, melodrama barato ou pieguismo. Mantenha sobriedade (estilo Isaltino Gomes), profundidade pastoral e oralidade bíblica viva.
-- Para cada ilustração, gere também uma detalhada composição visual (visualPrompt) com descrição estética da cena adequada para projeção de púlpito, telão ou geração de arte em IA (com iluminação, elementos centrais, atmosfera e paleta de cores).
+Sua missão é criar narrativas homiléticas em texto denso, envolvente e teologicamente ancorado que funcionem rigorosamente como RECURSOS HOMILÉTICOS DE ARGUMENTAÇÃO E ÊNFASE para o sermão de púlpito. A ilustração serve para iluminar uma tese teológica, demonstrar uma verdade bíblica profunda ou confrontar diretamente a consciência e as afeições dos ouvintes.
+
+Tema / Assunto Central: "${topic || "Graça e Redenção"}"
+${scripture ? `Passagem Bíblica Conectada: "${scripture}".` : ''}
+Tipo Solicitado: ${type && type !== 'todos' ? type : 'alternar criticamente entre as categorias permitidas'}
+${pastoralFocus ? `Foco Pastoral / Aplicação: "${pastoralFocus}".` : ''}
+
+DIRETRIZES FUNDAMENTAIS PARA AS NARRATIVAS HOMILÉTICAS:
+1. DIVERSIDADE E CATEGORIAS PERMITIDAS DE HISTÓRIAS:
+   A ilustração deve pertencer a uma das seguintes categorias homiléticas:
+   - "histórica": Eventos biográficos reais, mártires da fé, episódios da Reforma Protestante, pioneiros batistas, puritanos ou grandes encruzilhadas históricas da humanidade.
+   - "cotidiano": Situações reais e universais do cotidiano moderno (lar, casamento, criação de filhos, ética e pressões no trabalho, dilemas das finanças, vizinhança).
+   - "parabólica": Parábolas, alegorias densas e metáforas narrativas profundas e verossímeis que transmitam verdades eternas sem ingenuidade infantil.
+   - "natureza": Fenômenos científicos, astronomia, biologia ou leis da criação que apontam para a majestade, sabedoria e governo providencial do Criador.
+   - "bíblica": Momentos de narrativas bíblicas contados com frescor oral e rigor à exegese do texto sagrado.
+
+2. OBJETIVO FUNCIONAL E ARGUMENTATIVO:
+   - A ilustração não é mero entretenimento ou enfeite retórico. Ela deve servir como ARGUMENTO HOMILÉTICO de convicção moral e espiritual.
+   - Evite clichês artificiais, melodrama piegas ou anedotas vazias. Priorize sobriedade, inteligência, humanidade e peso espiritual.
+
+3. FORMATO E LINGUAGEM DA "NARRATIVA ORAL PARA O PÚLPITO":
+   - Escreva a narrativa (campo "story") em tom falado natural, fluido e direto, sem vocabulário rebuscado ou academicismos frios. O pregador deve poder ler ou contar a história com ritmo, pausas expressivas e impacto imediato na congregação (2 a 4 parágrafos vigorosos).
+   - O campo "moral" ("Moral & Lição Homilética") deve ser a ponte teológica clara e incisiva que amarra a história à verdade bíblica e desce às trincheiras do coração do ouvinte.
 
 Retorne no formato JSON exato:
 {
   "topic": "${topic || "Graça e Redenção"}",
   "illustrations": [
     {
-      "title": "Título Claro e Impactante",
-      "type": "${type && type !== 'todas' ? type : 'bíblica'}", 
+      "title": "Título Claro, Magnético e Impactante",
+      "type": "${type && type !== 'todos' ? type : 'histórica'}", 
       "scripture": "${scripture || ''}",
-      "story": "A narrativa completa da ilustração em linguagem inspiradora, sóbria e oralmente pregável.",
-      "moral": "O ponto homilético, lição central ou apelo pastoral claro.",
-      "visualPrompt": "Descrição rica da composição visual da cena (sujeito central, iluminação chiaroscuro, estilo pictórico, tons sóbrios, proporção ${aspectRatio || '16:9'}, adequado para slide de sermão no púlpito).",
-      "visualStyle": "${visualStyle || 'Gravura Sacra Antiga'}",
+      "story": "Texto completo da Narrativa Oral para o Púlpito: linguagem falada natural, ritmo envolvente, humanidade e sobriedade pastoral.",
+      "moral": "Parágrafo incisivo da Moral & Lição Homilética: a ponte teológica clara que amarra a história ao texto sagrado e confronta a consciência.",
+      "visualPrompt": "Descrição concisa da cena para eventual slide ou projeção discreta no púlpito (${aspectRatio || '16:9'}).",
+      "visualStyle": "${visualStyle || 'Minimalismo Editorial & Púlpito'}",
       "aspectRatio": "${aspectRatio || '16:9'}"
     }
   ]
 }
-Gere entre 2 e 3 ilustrações completas e ricas.
+Gere entre 2 e 3 ilustrações completas, profundas e ricas.
 `;
 
   try {
@@ -1768,7 +1782,7 @@ Gere entre 2 e 3 ilustrações completas e ricas.
     return res.json({
       ...mockIllus,
       fallbackActive: true,
-      fallbackReason: "Limite de cota da API atingido (Código 429). O gerador de ilustrações recorreu ao acervo ilustrativo pastoral local."
+      fallbackReason: "Limite de cota da API atingido. O gerador recorreu ao acervo ilustrativo pastoral local."
     });
   }
 });
@@ -2481,15 +2495,81 @@ function getMockIllustrations(topic?: string, type?: string, scripture?: string,
   const ar = aspectRatio || "16:9";
   const sc = scripture || "Romanos 5:1-5";
 
+  const requestedType = type && type !== 'todos' ? type : 'misto';
+
+  if (requestedType === 'histórica') {
+    return {
+      topic: t,
+      illustrations: [
+        {
+          title: "O Papiro Clandestino de Tyndale",
+          type: "histórica",
+          scripture: sc,
+          story: "No inverno gelado de 1536 na masmorra de Vilvoorde, o tradutor bíblico William Tyndale tremia de frio sob correntes pesadas antes de ser levado à fogueira. Em sua última carta, ele não pediu roupas de seda ou clemência aos seus algozes: implorou apenas por um casaco de lã mais quente, uma vela de sebo e o texto hebraico da Bíblia para continuar traduzindo até o último suspiro. Quando as chamas subiram, sua última oração foi: 'Senhor, abre os olhos do rei da Inglaterra'. Menos de três anos depois, a Bíblia em inglês estava aberta em todas as paróquias inglesas.",
+          moral: "O Evangelho que proclamamos hoje foi preservado pelo sangue e pela perseverança inabalável de servos que amaram mais a verdade de Deus do que a própria respiração terrena. Que tenhamos a mesma coragem santa no púlpito e na vida.",
+          visualPrompt: `Cena histórica solene no estilo ${st}, cela de pedra escura do século XVI com pequena vela iluminando códice bíblico sobre mesa rústica, proporção ${ar}, estética dramática chiaroscuro.`,
+          visualStyle: st,
+          aspectRatio: ar
+        },
+        {
+          title: "A Sentinela de Latimer e Ridley",
+          type: "histórica",
+          scripture: sc,
+          story: "Amarrados à mesma estaca em Oxford em 1555 por sua recusa em renegar a suficiência de Cristo, os bispos Hugh Latimer e Nicholas Ridley sentiam a fumaça sufocante começar a subir aos seus pés. Vendo o companheiro hesitar diante da agonia, o idoso Latimer ergueu a voz com santa solenidade: 'Tem bom ânimo, mestre Ridley, e sê homem! Hoje acenderemos por graça de Deus uma candeia tal na Inglaterra que confio jamais será apagada'.",
+          moral: "A lealdade a Cristo nas horas mais sombrias não apenas sustenta a alma do crente, mas acende um farol de esperança e fidelidade que as trevas de nenhuma geração conseguirão sufocar.",
+          visualPrompt: `Composição histórica dramática em ${st}, atmosfera solene sob céu carregado, luz dourada cálida rompendo a neblina, proporção ${ar}.`,
+          visualStyle: st,
+          aspectRatio: ar
+        }
+      ]
+    };
+  }
+
+  if (requestedType === 'natureza') {
+    return {
+      topic: t,
+      illustrations: [
+        {
+          title: "O Voo do Falcão e a Lei Invisível",
+          type: "natureza",
+          scripture: sc,
+          story: "Na vastidão das montanhas, os naturalistas observam há séculos o voo soberano do falcão-peregrino, ave que atinge velocidades espantosas em mergulho sem quebrar suas asas delgadas. Mas o maior prodígio não está no bater vigoroso de suas penas, e sim na submissão instintiva às correntes térmicas invisíveis que sobem dos desfiladeiros: se a ave tentar subir na força de seus próprios músculos, ela despenca de cansaço. Ela foi desenhada para repousar no sopro do vento que não vê.",
+          moral: "Se o Todo-Poderoso governa com precisão cirúrgica as leis invisíveis da criação para sustentar as aves dos céus, com que direito entregamos nossa alma ao desespero e à ansiedade? O cristão repousa na soberania invisível de Deus.",
+          visualPrompt: `Cena da natureza majestosa no estilo ${st}, falcão de asas estendidas planando em céu aberto sobre cânions rochosos banhados por luz solar dourada, proporção ${ar}.`,
+          visualStyle: st,
+          aspectRatio: ar
+        }
+      ]
+    };
+  }
+
+  if (requestedType === 'parabólica') {
+    return {
+      topic: t,
+      illustrations: [
+        {
+          title: "A Fortaleza dos Dois Portões",
+          type: "parabólica",
+          scripture: sc,
+          story: "Em tempos antigos, um soberano sábio mandou erguer uma fortaleza no topo de uma escarpa com duas entradas: o Portão da Ostentação, largo e folheado a ouro reluzente, e o Portão da Humildade, estreito e talhado em rocha nua. Ao soar o alarme da invasão, os ricos mercadores correram ao portão dourado tentando passar com suas carruagens e baús de prata, onde foram encurralados. Os peregrinos e simples que entraram descalços e despojados pelo portão estreito foram abrigados em segurança nas galerias mais profundas da rocha.",
+          moral: "O Reino de Deus não se abre aos que chegam cheios de orgulho, títulos e méritos terrenos. Apenas os que se despojam da soberba e abraçam o escândalo da cruz encontram redenção e refúgio na rocha eterna.",
+          visualPrompt: `Composição alegórica monumental no estilo ${st}, cidadela de pedra antiga no cume de monte escarpado, portão estreito de rocha talhada banhado por luz dourada suave, proporção ${ar}.`,
+          visualStyle: st,
+          aspectRatio: ar
+        }
+      ]
+    };
+  }
+
   return {
     topic: t,
     illustrations: [
       {
         title: "O Pescador Solitário e a Âncora Oculta",
-        type: type === "bíblica" ? "bíblica" : "cotidiano",
+        type: "cotidiano",
         scripture: sc,
         story: "Um experiente barqueiro do litoral aprendeu de seus ancestrais que, quando o vendaval se abate sobre a costa, a embarcação nunca deve tentar vencer a fúria das vagas a força de remos. Ele lança uma pesada âncora de ferro forjado nas fendas de uma rocha submersa. Os ventos rugem e a proa balança, mas o barco não se desvia um palmo do seu refúgio.",
-        moral: "A fé no Deus soberano opera exatamente como essa âncora oculta: ela não impede a tempestade de soprar, mas nos mantém firmes sobre a Rocha eterna.",
+        moral: "A fé no Deus soberano opera exatamente como essa âncora oculta: ela não impede a tempestade de soprar nas pressões da família e do trabalho, mas nos mantém inabaláveis sobre a Rocha eterna.",
         visualPrompt: `Cena marítima dramática em ${st}, iluminação chiaroscuro solene com feixe dourado rompendo as nuvens escuras sobre o mar encapelado, pequeno barco firme preso por cabo esticado a rocha firme submersa, proporção ${ar}, estética sacra clássica, paleta ${colorTone || 'tons terrosos e âmbar'}.`,
         visualStyle: st,
         aspectRatio: ar
@@ -2509,7 +2589,7 @@ function getMockIllustrations(topic?: string, type?: string, scripture?: string,
         type: "histórica",
         scripture: "Salmos 119:105",
         story: "Na costa rochosa da Bretanha no século XIX, um violento tremor de terra quebrou o mecanismo giratório do farol principal durante uma noite de neblina espessa. O idoso guardião não se desesperou: reuniu lâmpadas de azeite manuais e permaneceu horas na torre fria alimentando a chama sem piscar, garantindo que os navios mercantes avistassem a linha do recife até o raiar da aurora.",
-        moral: "O testemunho da igreja local pode parecer modesto aos olhos dos grandes centros, mas a sua fidelidade contínua salva vidas do naufrágio espiritual.",
+        moral: "O testemunho da igreja local e da família cristã pode parecer modesto aos olhos dos grandes centros, mas a sua fidelidade contínua salva vidas do naufrágio moral e espiritual.",
         visualPrompt: `Pintura em ${st}, torre de farol de granito erguida sobre penhasco fustigado pelas ondas, luz dourada cálida da lanterna cortando a névoa noturna oceânica, proporção ${ar}, paleta de alto contraste, arte sóbria para projeção de púlpito.`,
         visualStyle: st,
         aspectRatio: ar

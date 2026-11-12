@@ -362,21 +362,9 @@ ${activeResult.magisterialPeroration.pastoralCharge}
       {/* Top Banner & Header */}
       <div className="bg-white/80 p-6 rounded-2xl border border-[#E6E2DA] shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest bg-[#5A5A40]/10 text-[#5A5A40] px-2.5 py-1 rounded-full flex items-center gap-1.5">
-              <Scale className="w-3.5 h-3.5" />
-              Tribunal de Discernimento Homilético
-            </span>
-            <span className="text-[10px] font-bold uppercase tracking-widest bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-full">
-              Confissão de 1689 • Exegese Fiel
-            </span>
-          </div>
           <h1 className="text-2xl font-serif text-[#2D2926] font-bold flex items-center gap-2">
-            Crivo Teológico & Hermenêutico
+            Crivo Teológico
           </h1>
-          <p className="text-xs text-gray-600 mt-1 max-w-3xl leading-relaxed">
-            Peneire o sermão em <strong>três camadas de fogo teológico</strong> — confrontando heresias históricas, neutralizando as pressões da pós-modernidade e desmascarando a falsa complacência religiosa — culminando na <strong>Peroração Magistral</strong> para encerramento de púlpito.
-          </p>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">

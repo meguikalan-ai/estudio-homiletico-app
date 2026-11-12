@@ -4196,9 +4196,8 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
 
       {/* Styled Footer */}
       <footer className="bg-[#2D2926] text-[#E6E2DA]/65 py-6 px-4 border-t border-[#5A5A40]/10 text-center text-xs">
-        <div className="max-w-4xl mx-auto space-y-2">
-          <p>© 2026 Sermões & Mensagens • Estúdio Homilético Batista — Pastor Fernando Veiga.</p>
-          <p className="text-[10px] text-[#E6E2DA]/40">Alinhado à Declaração de Fé Batista e aos princípios da autonomia local. Geração assistida teologicamente pela Inteligência Artificial.</p>
+        <div className="max-w-4xl mx-auto">
+          <p className="font-bold no-underline">@ 2026 Estúdio Homilético - Pr. Fernando Veiga</p>
         </div>
       </footer>
 

@@ -37,19 +37,21 @@ async function generateJSON(params: {
   systemInstruction?: string;
   responseSchema?: any;
   customModel?: string;
+  temperature?: number;
 }): Promise<any> {
   if (!ai) {
     throw new Error("Gemini API Client not initialized (Simulation mode).");
   }
 
   const primaryModel = params.customModel || "gemini-3.1-flash-lite";
-  // Dynamic fallback models in sequence to ensure absolute continuation and low latency
-  const modelsToTry = [primaryModel, "gemini-3.8-flash", "gemini-flash-latest"].filter(
+  // Dynamic fallback models in sequence using active Gemini 3.1 / 4 models
+  const modelsToTry = [primaryModel, "gemini-3.1-flash-lite", "gemini-4-hydrogen"].filter(
     (m, idx, arr) => arr.indexOf(m) === idx
   );
 
   const config: any = {
     responseMimeType: "application/json",
+    temperature: params.temperature ?? 0.85,
   };
   if (params.systemInstruction) {
     config.systemInstruction = params.systemInstruction;
@@ -69,12 +71,12 @@ async function generateJSON(params: {
       try {
         console.log(`[generateJSON] Attempting API call with model (${i + 1}/${modelsToTry.length}): ${currentModel}`);
         
-        // Timeout de segurança de 45s por tentativa para evitar que a conexão HTTP do navegador fique travada
+        // Timeout de segurança de 55s por tentativa para suportar sermões robustos de 40-60min sem travar o cliente
         let timerId: NodeJS.Timeout | null = null;
         const timeoutPromise = new Promise<never>((_, reject) => {
           timerId = setTimeout(() => {
-            reject(new Error(`Timeout na chamada do modelo ${currentModel} após 45s.`));
-          }, 45000);
+            reject(new Error(`Timeout na chamada do modelo ${currentModel} após 55s.`));
+          }, 55000);
         });
 
         const callPromise = ai.models.generateContent({
@@ -272,14 +274,14 @@ O ouvinte nunca deve ser deixado sozinho para descobrir a ligação entre as par
 
 2. LIGAÇÃO ENTRE A INTRODUÇÃO E O CONTEXTO HISTÓRICO (MANDATÓRIO):
 A transição da Introdução para o Contexto Histórico-Cultural deve demonstrar explicitamente que compreender o contexto da passagem bíblica é essencial para captar a mensagem espiritual profunda.
-Use obrigatoriamente construções de transição como:
+Construa uma frase de transição ORIGINAL, viva e conectada ao texto estudado (varie a formulação a cada sermão — NUNCA copie literalmente os exemplos abaixo como muleta repetitiva). Exemplos meramente ilustrativos de estilo:
 * "Para entendermos a força dessa declaração, precisamos primeiro compreender o cenário em que ela foi pronunciada."
 * "Antes de examinarmos as verdades do texto, é importante observar o contexto que cerca esta passagem."
 * "O contexto histórico nos ajuda a enxergar a profundidade do que o autor está comunicando."
 
 3. LIGAÇÃO ENTRE O CONTEXTO HISTÓRICO E AS DIVISÕES (TRANSIÇÃO CRÍTICA):
 Esta transição homilética crucial DEVE acontecer exclusivamente no ÚLTIMO PARÁGRAFO do Contexto Histórico e Exegético (e NUNCA na Introdução). Sua função é amarrar o contexto do texto, o tema central e anunciar unicamente neste momento a estrutura de divisões e pontos que serão percorridos no desenvolvimento.
-- Regra obrigatória: A transição deve ser construída de acordo com a natureza da passagem bíblica, sem repetições robotizadas como "Vejamos três pontos". Prefira ligar o tema e os pontos.
+- Regra obrigatória: A transição deve ser construída de acordo com a natureza da passagem bíblica, sem repetições robotizadas como "Vejamos três pontos". Prefira ligar o tema e os pontos. Varie organicamente entre 3 ou 4 divisões conforme o fluxo natural do texto sagrado e escolha o vocábulo organizador mais fiel à passagem (evite repetir sempre "três verdades fundamentais").
 - Aplique o modelo de transição correspondente de acordo com o foco e natureza da mensagem:
   * Quando organizada em VERDADES: "À luz desse contexto, o texto nos apresenta três verdades fundamentais." ou "Diante desse cenário, podemos identificar quatro verdades que iluminam esta passagem." ou "O autor nos conduz a três grandes verdades que merecem nossa atenção."
   * Quando organizada em PRINCÍPIOS: "O texto revela três princípios indispensáveis para a vida cristã." ou "Nesta passagem encontramos quatro princípios que orientam nossa caminhada com Deus."
@@ -431,7 +433,6 @@ O objetivo não é imitar trejeitos de fala, mas reproduzir os valiosos princíp
   Exemplos de títulos: "Erros e acertos de uma pessoa piedosa", "Uma cristã para este tempo", "Arruinando a própria vida", "Um discípulo que acrescenta à vida dos outros".
   Evite títulos genéricos ("Primeiro ponto", "A fé", "A obediência").
 * Cada ponto deve conter: explicação bíblica sob a ótica histórica, análise pastoral da mente humana, confrontação espiritual amorosa e firme, aplicação prática baseada na realidade contemporânea e conexão direta com a vida da igreja local.
-�lise pastoral da mente humana, confrontação espiritual amorosa e firme, aplicação prática baseada na realidade contemporânea e conexão direta com a vida da igreja local.
 
 7. ORALIDADE E LINGUAGEM CONVERSACIONAL:
 * Frases fluidas e preferencialmente mais curtas. Perguntas retóricas inteligentes de forma ocasional, tom caloroso e natural.
@@ -507,7 +508,12 @@ app.post("/api/gemini/generate-sermon", async (req, res) => {
 
   if (!ai) {
     const mockRes = getMockSermon(title, theme, scripture, style, churchProfile, audience, bibleVersion, isOutline, seriesName);
-    return res.status(200).json({ ...mockRes, duration: duration || '30' });
+    return res.status(200).json({
+      ...mockRes,
+      duration: duration || '30',
+      fallbackActive: true,
+      fallbackReason: "Chave de API do Gemini (GEMINI_API_KEY) não configurada neste ambiente. O simulador homilético de contingência assumiu a geração do sermão."
+    });
   }
 
   let durationGuideline = '';
@@ -631,17 +637,24 @@ REGRA DAS ILUSTRAÇÕES:
 - Cada uma deve estar em um ponto expositivo diferente (nunca duas no mesmo ponto).
 - Pelo menos um dos pontos não deve ter ilustração (apenas a exposição e aplicação), variando a densidade homilética do sermão.
 
+★ REGRA DE ORIGINALIDADE E VARIEDADE HOMILÉTICA (ANTI-REPETIÇÃO MANDATÓRIA):
+- Cada sermão deve soar único, organicamente moldado pela perícope bíblica (${scripture}) e pelo tema solicitado (${theme || 'livre'}).
+- PROIBIDO abrir a introdução com fórmulas desgastadas e repetitivas como "Muitas vezes...", "Vivemos em um mundo..." ou "Ao longo da história...". Comece diretamente com uma cena concreta, um contraste existencial do próprio texto bíblico, uma pergunta incisiva ou uma observação pastoral ligada à passagem.
+- NUNCA copie literalmente os exemplos de frases de transição das diretrizes acima; crie pontes originais com o mesmo rigor terminológico.
+- Estruture em 3 ou 4 divisões expositivas conforme a progressão natural dos versículos da passagem e varie o substantivo organizador das pontes (ex.: realidades, pilares, marcas, fundamentos, lições, atitudes, evidências, promessas, verdades) em vez de repetir sempre "três verdades fundamentais".
+- Identificador de geração inédita #${Date.now() % 100000}: produza título, ângulo exegético, ilustrações e aplicações totalmente originais para esta geração.
+
 Retorne um objeto JSON com os seguintes campos exatos de texto:
 {
   "title": "título definitivo e impactante em português",
   "theme": "ideia central ou tema homilético",
   "scripture": "código e versículo bíblico fornecido com texto respectivo na versão ${bibleVersion}",
-  "introduction": "uma introdução magnética com arranque vivo que capture a atenção imediatamente, apresente a tensão humana e anuncie o texto bíblico com urgência e sobriedade (sem preâmbulos burocráticos, sem metarreferências e sem antecipar os pontos)",
-  "biblicalContext": "contexto histórico-cultural e literário da passagem em 1-2 parágrafos, culminando em transição orgânica no último parágrafo que introduz as divisões",
+  "introduction": "uma introdução magnética com arranque vivo e ORIGINAL (sem começar com 'Muitas vezes...') que capture a atenção imediatamente, apresente a tensão humana e anuncie o texto bíblico com urgência e sobriedade (sem preâmbulos burocráticos, sem metarreferências e sem antecipar os pontos)",
+  "biblicalContext": "contexto histórico-cultural e literário da passagem em 1-2 parágrafos, culminando em transição orgânica e ORIGINAL no último parágrafo que introduz as divisões (3 ou 4, com o vocábulo conceitual escolhido para este sermão)",
   "expositoryPoints": [
     {
       "title": "I. Título do Primeiro Ponto",
-      "precedingTransition": "Frase de transição e ligação que antecede e introduz o primeiro ponto de forma natural, adotando ESTRITAMENTE o mesmo vocábulo conceitual das divisões (ex: se as divisões tratam de 'Realidades', use 'A primeira realidade que o texto nos descortina é...'; se 'Verdades', use 'A primeira verdade que emerge desta passagem é...'; se 'Pilares', use 'O primeiro pilar da nossa fé é...'). PROIBIDO usar 'princípio' a menos que as próprias divisões usem a palavra 'princípio'.",
+      "precedingTransition": "Frase de transição ORIGINAL e natural que antecede e introduz o primeiro ponto, adotando ESTRITAMENTE o mesmo vocábulo conceitual escolhido no último parágrafo do contexto (ex.: se 'pilares', use 'pilar'; se 'marcas', use 'marca'; se 'realidades', use 'realidade'; se 'lições', use 'lição').",
       "explanation": "Desenvolvimento exegético encorpado e substancial, contendo nativamente:\n(a) Explicação Textual Profunda: [análise minuciosa dos versículos com termos originais transliterados no hebraico/grego, tempos verbais e contexto imediato].\n\n(b) Paralelos Escriturísticos: [conexões canônicas com 2-3 passagens bíblicas correlatas com citações de livros e versículos entre parênteses].\n\n(c) Cristocentrismo Redentor: [convergência teológica para a cruz, a justificação pela fé e o Cordeiro de Deus].",
       "illustration": {
         "type": "cotidiano",
@@ -651,7 +664,7 @@ Retorne um objeto JSON com os seguintes campos exatos de texto:
     },
     {
       "title": "II. Título do Segundo Ponto",
-      "precedingTransition": "Frase elegante de transição e ponte que antecede e introduz o segundo ponto, conectando-o suavemente com o ponto anterior e mantendo ESTRITAMENTE o mesmo vocábulo conceitual adotado no sermão (ex: 'Firmados nessa primeira verdade/realidade/pilar, a passagem avança para uma segunda verdade/realidade/pilar: ...').",
+      "precedingTransition": "Frase elegante e ORIGINAL de transição que antecede o segundo ponto, mantendo ESTRITAMENTE o mesmo vocábulo conceitual adotado no sermão.",
       "explanation": "Desenvolvimento exegético encorpado e substancial, contendo nativamente:\n(a) Explicação Textual Profunda: [exposição minuciosa do texto com termos originais e análise gramatical/histórica].\n\n(b) Paralelos Escriturísticos: [conexões canônicas essenciais com outras Escrituras].\n\n(c) Cristocentrismo Redentor: [desenvolvimento no Evangelho da graça e na suficiência do sacrifício de Cristo].",
       "illustration": {
         "type": "bíblica",
@@ -661,7 +674,7 @@ Retorne um objeto JSON com os seguintes campos exatos de texto:
     },
     {
       "title": "III. Título do Terceiro Ponto",
-      "precedingTransition": "Frase elegante de transição e ponte que antecede e introduz o terceiro ponto, fazendo a ligação com o anterior e mantendo ESTRITAMENTE o mesmo vocábulo conceitual adotado no sermão (ex: 'Por fim, a passagem nos confronta com uma terceira verdade/realidade/pilar que precisa ser guardada no coração: ...').",
+      "precedingTransition": "Frase elegante e ORIGINAL de transição que antecede o terceiro ponto (ou penúltimo/último ponto, podendo haver 3 ou 4 divisões conforme a passagem), mantendo ESTRITAMENTE o mesmo vocábulo conceitual adotado no sermão.",
       "explanation": "Desenvolvimento exegético encorpado e substancial, contendo nativamente:\n(a) Explicação Textual Profunda: [exposição bíblica apurada com vocábulos originais e implicações teológicas].\n\n(b) Paralelos Escriturísticos: [passagens correlatas que confirmam a doutrina].\n\n(c) Cristocentrismo Redentor: [como a fidelidade do Cordeiro sela esta promessa definitiva].",
       "application": "(d) Aconselhamento e Confronto Pastoral: Aplicação vital da verdade do ponto para a igreja local, desafiando a inércia espiritual e convocando a congregação à fidelidade perseverante."
     }
@@ -689,16 +702,18 @@ Certifique-se de que o plano seja extremamente fiel às escrituras, fluido para 
 
     const data = await generateJSON({
       contents: prompt,
-      systemInstruction: sInstruction
+      systemInstruction: sInstruction,
+      temperature: 0.9
     });
     return res.json(data);
   } catch (error: any) {
     console.warn("Sermon Generation Error (falling back to simulated sermon):", error);
     const mockSermon = getMockSermon(title, theme, scripture, style, churchProfile, audience, bibleVersion, isOutline, seriesName);
+    const errMsg = error?.message || String(error);
     return res.json({
       ...mockSermon,
       fallbackActive: true,
-      fallbackReason: "Limite de cota da API atingido (Código 429). O simulador teológico de contingência clássica assumiu a geração da pregação com sucesso."
+      fallbackReason: `Falha temporária ao consultar a IA (${errMsg}). O simulador teológico de contingência assumiu a geração da pregação.`
     });
   }
 });

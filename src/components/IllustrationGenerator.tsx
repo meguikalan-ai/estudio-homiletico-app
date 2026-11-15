@@ -105,15 +105,11 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
     type: VisualIllustration['type'];
     scripture: string;
     pastoralFocus: string;
-    visualStyle: string;
-    aspectRatio: '16:9' | '1:1' | '4:3' | '9:16';
   }>({
     topic: '',
     type: 'histórica',
     scripture: '',
-    pastoralFocus: 'Fé e Confiança',
-    visualStyle: 'Gravura Sacra Antiga (Gustave Doré)',
-    aspectRatio: '16:9'
+    pastoralFocus: 'Fé e Confiança'
   });
 
   // Gallery state loaded from localStorage (safeguarded)
@@ -218,12 +214,10 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
     type: VisualIllustration['type'];
     scripture?: string;
     pastoralFocus?: string;
-    visualStyle?: string;
-    aspectRatio?: '16:9' | '1:1' | '4:3' | '9:16';
   }): VisualIllustration => {
-    const { topic, type, scripture, pastoralFocus, visualStyle, aspectRatio } = params;
-    const style = visualStyle || 'Gravura Sacra Antiga (Gustave Doré)';
-    const ratio = aspectRatio || '16:9';
+    const { topic, type, scripture } = params;
+    const style = 'Minimalismo Editorial & Púlpito';
+    const ratio = '16:9' as const;
     const sc = scripture || (type === 'bíblica' ? 'Gênesis 12:1-4' : 'Salmos 37:5');
 
     let title = topic;
@@ -302,9 +296,7 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
           topic: formData.topic.trim(),
           type: formData.type,
           scripture: formData.scripture.trim() || undefined,
-          pastoralFocus: formData.pastoralFocus,
-          visualStyle: formData.visualStyle,
-          aspectRatio: formData.aspectRatio
+          pastoralFocus: formData.pastoralFocus
         })
       });
 
@@ -322,8 +314,8 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
             story: first.story,
             moral: first.moral,
             visualPrompt: first.visualPrompt,
-            visualStyle: first.visualStyle || formData.visualStyle,
-            aspectRatio: (first.aspectRatio || formData.aspectRatio) as VisualIllustration['aspectRatio'],
+            visualStyle: first.visualStyle,
+            aspectRatio: first.aspectRatio as VisualIllustration['aspectRatio'],
             colorTone: 'Tons Terrosos & Âmbar Sacro',
             createdAt: Date.now()
           };
@@ -335,9 +327,7 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
           topic: formData.topic.trim(),
           type: formData.type,
           scripture: formData.scripture.trim() || undefined,
-          pastoralFocus: formData.pastoralFocus,
-          visualStyle: formData.visualStyle,
-          aspectRatio: formData.aspectRatio
+          pastoralFocus: formData.pastoralFocus
         });
       }
 
@@ -354,11 +344,9 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
       // Reset form fields
       setFormData({
         topic: '',
-        type: 'bíblica',
+        type: 'histórica',
         scripture: '',
-        pastoralFocus: 'Fé e Confiança',
-        visualStyle: 'Gravura Sacra Antiga (Gustave Doré)',
-        aspectRatio: '16:9'
+        pastoralFocus: 'Fé e Confiança'
       });
     } catch (err) {
       console.warn('Erro ao conectar com API de ilustrações, acionando contingência local:', err);
@@ -366,9 +354,7 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
         topic: formData.topic.trim(),
         type: formData.type,
         scripture: formData.scripture.trim() || undefined,
-        pastoralFocus: formData.pastoralFocus,
-        visualStyle: formData.visualStyle,
-        aspectRatio: formData.aspectRatio
+        pastoralFocus: formData.pastoralFocus
       });
       setIllustrations(prev => [fallbackIll, ...prev]);
       saveIllustrationToCloud(fallbackIll).catch(() => {});
@@ -415,10 +401,10 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
                 </div>
                 <div>
                   <h3 className="font-serif font-bold text-lg text-[#2D2926] leading-snug">
-                    Criar Nova Ilustração Narrativa para Púlpito
+                    Gerar Nova Ilustração
                   </h3>
                   <p className="text-xs text-gray-500">
-                    Componha histórias, metáforas e prompts visuais prontos para o púlpito
+                    Componha narrativas orais e argumentos homiléticos para o púlpito
                   </p>
                 </div>
               </div>
@@ -431,7 +417,7 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
             </div>
 
             {/* Form */}
-            <form onSubmit={handleCreateSubmit} className="space-y-4">
+            <form onSubmit={handleCreateSubmit} className="space-y-5">
               
               {/* Tema ou Assunto */}
               <div className="space-y-1.5">
@@ -495,11 +481,11 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
               </div>
 
               {/* Foco Pastoral / Aplicação */}
-              <div className="space-y-1.5">
+              <div className="space-y-2 pt-1">
                 <label className="block text-xs font-bold text-[#2D2926]">
                   Foco Pastoral / Aplicação Principal
                 </label>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {[
                     'Consolo', 
                     'Fé e Confiança', 
@@ -512,52 +498,15 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
                       type="button"
                       key={foco}
                       onClick={() => setFormData(prev => ({ ...prev, pastoralFocus: foco }))}
-                      className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium cursor-pointer transition-all ${
+                      className={`text-[11px] px-3 py-2 rounded-xl border font-medium cursor-pointer transition-all text-center ${
                         formData.pastoralFocus === foco 
-                          ? 'bg-[#5A5A40] text-white border-[#5A5A40]' 
+                          ? 'bg-[#5A5A40] text-white border-[#5A5A40] shadow-2xs' 
                           : 'bg-[#FAF6EE] text-gray-600 border-[#E6E2DA] hover:bg-white'
                       }`}
                     >
                       {foco}
                     </button>
                   ))}
-                </div>
-              </div>
-
-              {/* Estilo Visual da Cena & Proporção */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-[#2D2926]">
-                    Estilo Visual para Telão / IA
-                  </label>
-                  <select
-                    value={formData.visualStyle}
-                    onChange={(e) => setFormData(prev => ({ ...prev, visualStyle: e.target.value }))}
-                    className="w-full px-3 py-2 text-xs bg-[#FAF6EE] border border-[#E6E2DA] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5A5A40] text-[#2D2926]"
-                  >
-                    <option value="Gravura Sacra Antiga (Gustave Doré)">Gravura Sacra Antiga (Gustave Doré)</option>
-                    <option value="Óleo Barroco Solene (Rembrandt)">Óleo Barroco Solene (Rembrandt)</option>
-                    <option value="Minimalismo Editorial & Púlpito">Minimalismo Editorial & Púlpito</option>
-                    <option value="Aquarela Sacra Clássica">Aquarela Sacra Clássica</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-[#2D2926]">
-                    Proporção de Imagem
-                  </label>
-                  <select
-                    value={formData.aspectRatio}
-                    onChange={(e) => setFormData(prev => ({ 
-                      ...prev, 
-                      aspectRatio: e.target.value as VisualIllustration['aspectRatio'] 
-                    }))}
-                    className="w-full px-3 py-2 text-xs bg-[#FAF6EE] border border-[#E6E2DA] rounded-xl focus:outline-none focus:ring-1 focus:ring-[#5A5A40] text-[#2D2926]"
-                  >
-                    <option value="16:9">16:9 (Widescreen / Telão Padrão)</option>
-                    <option value="4:3">4:3 (Projeção Clássica)</option>
-                    <option value="1:1">1:1 (Quadrado / Boletim)</option>
-                  </select>
                 </div>
               </div>
 

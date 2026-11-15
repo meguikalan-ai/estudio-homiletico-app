@@ -233,6 +233,8 @@ export async function performInitialSermonSmartSync(
   hasRemoteChanges: boolean;
   addedFromCloudCount: number;
   syncedToCloudCount: number;
+  cloudCount: number;
+  error?: string;
 }> {
   try {
     let localList = currentLocalSermons;
@@ -247,6 +249,17 @@ export async function performInitialSermonSmartSync(
     }
 
     const pushResult = await syncAllLocalSermonsToCloud(localList, userId);
+    if (pushResult.error) {
+      return {
+        mergedSermons: localList,
+        hasRemoteChanges: false,
+        addedFromCloudCount: 0,
+        syncedToCloudCount: 0,
+        cloudCount: 0,
+        error: pushResult.error
+      };
+    }
+
     const merged = smartMergeSermons(localList, pushResult.cloudSermons || []);
     const localIds = new Set(localList.map(s => s.id));
     const addedFromCloudCount = merged.filter(s => !localIds.has(s.id)).length;
@@ -262,15 +275,19 @@ export async function performInitialSermonSmartSync(
       mergedSermons: merged,
       hasRemoteChanges,
       addedFromCloudCount,
-      syncedToCloudCount: pushResult.syncedCount
+      syncedToCloudCount: pushResult.syncedCount,
+      cloudCount: pushResult.cloudCount
     };
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
     console.warn('[SyncService] Falha ao executar Smart Merge inicial:', err);
     return {
       mergedSermons: currentLocalSermons,
       hasRemoteChanges: false,
       addedFromCloudCount: 0,
-      syncedToCloudCount: 0
+      syncedToCloudCount: 0,
+      cloudCount: 0,
+      error: errMsg
     };
   }
 }

@@ -50,9 +50,76 @@
         "deletedAt": { "type": "number" }
       },
       "required": ["id", "deletedAt"]
+    },
+    "VisualIllustration": {
+      "title": "VisualIllustration",
+      "description": "Pulpit oral illustration and homiletical narrative.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string" },
+        "story": { "type": "string" },
+        "moral": { "type": "string" },
+        "scripture": { "type": "string" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "title", "story"]
+    },
+    "TheologicalChatMessage": {
+      "title": "TheologicalChatMessage",
+      "description": "Consultor Biblico e Teologico message synchronized across devices.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "role": { "type": "string" },
+        "content": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["id", "role", "content", "timestamp"]
+    },
+    "TheologicalSieveEntry": {
+      "title": "TheologicalSieveEntry",
+      "description": "Crivo Teologico analysis entry synchronized across devices.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "scripture": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "title"]
     }
   },
   "firestore": {
+    "/users/{uid}/pastoral_sermons/{sermonId}": {
+      "schema": "Sermon",
+      "description": "Primary user-scoped pastoral sermons collection synchronized across desktop and mobile in real-time."
+    },
+    "/users/{uid}/sermons/{sermonId}": {
+      "schema": "Sermon",
+      "description": "Legacy user-scoped pastoral sermons collection."
+    },
+    "/users/{uid}/series/{seriesId}": {
+      "schema": "ExpositorySeries",
+      "description": "User-scoped expository series collection."
+    },
+    "/users/{uid}/illustrations/{illustrationId}": {
+      "schema": "VisualIllustration",
+      "description": "User-scoped pulpit illustrations collection."
+    },
+    "/users/{uid}/theological_chat/{messageId}": {
+      "schema": "TheologicalChatMessage",
+      "description": "User-scoped Consultor Biblico chat messages synchronized across devices."
+    },
+    "/users/{uid}/theological_sieve/{sieveId}": {
+      "schema": "TheologicalSieveEntry",
+      "description": "User-scoped Crivo Teologico history synchronized across devices."
+    },
+    "/users/{uid}/tombstones/{tombstoneId}": {
+      "schema": "Tombstone",
+      "description": "User-scoped deleted items tombstone collection."
+    },
     "/pastoral_sermons/{sermonId}": {
       "schema": "Sermon",
       "description": "Primary pastoral sermons collection synchronized across desktop and mobile in real-time."

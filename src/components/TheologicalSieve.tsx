@@ -3,9 +3,18 @@ import {
   Scale, ShieldAlert, Sparkles, BookOpen, History, Copy, Check, 
   ArrowRight, RefreshCw, AlertTriangle, Flame, Globe, Bookmark, 
   Trash2, Feather, CheckCircle2, ChevronRight, FileText, ChevronDown, 
-  ExternalLink
+  ExternalLink, Cloud
 } from 'lucide-react';
 import { Sermon, TheologicalSieveResult } from '../types';
+import {
+  FIXED_PASTORAL_UID,
+  saveSieveResultToCloud,
+  deleteSieveResultFromCloud,
+  syncAllLocalSieveToCloud,
+  subscribeToTheologicalSieve,
+  getDeletedSieveIds
+} from '../services/sermonStorage';
+import { safeApiPost } from '../services/apiClient';
 
 interface TheologicalSieveProps {
   sermons: Sermon[];
@@ -124,12 +133,59 @@ export const TheologicalSieve: React.FC<TheologicalSieveProps> = ({
   const [history, setHistory] = useState<TheologicalSieveResult[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? JSON.parse(saved) : [];
+      const parsed: TheologicalSieveResult[] = saved ? JSON.parse(saved) : [];
+      const deleted = getDeletedSieveIds();
+      return Array.isArray(parsed) ? parsed.filter(item => item && !deleted.has(item.id)) : [];
     } catch {
       return [];
     }
   });
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
+  const [syncState, setSyncState] = useState<'synced' | 'syncing' | 'error'>('syncing');
+
+  // Real-time Firestore synchronization for Crivo Teológico across all devices
+  useEffect(() => {
+    let isMounted = true;
+    const unsub = subscribeToTheologicalSieve(
+      FIXED_PASTORAL_UID,
+      (cloudEntries, deletedIds) => {
+        if (!isMounted) return;
+        setSyncState('synced');
+        setHistory(prev => {
+          const map = new Map<string, TheologicalSieveResult>();
+          prev.forEach(item => {
+            if (item && item.id && !deletedIds.has(item.id)) {
+              map.set(item.id, item);
+            }
+          });
+          cloudEntries.forEach(item => {
+            if (item && item.id && !deletedIds.has(item.id)) {
+              map.set(item.id, item);
+            }
+          });
+          const merged = Array.from(map.values())
+            .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+            .slice(0, 30);
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+      },
+      () => {
+        if (isMounted) setSyncState('error');
+      }
+    );
+
+    syncAllLocalSieveToCloud(history, FIXED_PASTORAL_UID).catch(() => {});
+
+    return () => {
+      isMounted = false;
+      if (unsub) {
+        try { unsub(); } catch {}
+      }
+    };
+  }, []);
 
   // Sync with currentSermon or selectedLibrarySermon
   useEffect(() => {
@@ -218,23 +274,17 @@ export const TheologicalSieve: React.FC<TheologicalSieveProps> = ({
     }, 1800);
 
     try {
-      const response = await fetch('/api/gemini/theological-sieve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await safeApiPost<TheologicalSieveResult & { fallbackActive?: boolean; fallbackReason?: string }>(
+        '/api/gemini/theological-sieve',
+        {
           title: payloadTitle,
           scripture: payloadScripture,
           theme: payloadTheme,
           mainPoints: payloadPoints,
           outlineText: payloadPoints
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error("Erro na comunicação com o motor do Crivo Teológico.");
-      }
-
-      const data: TheologicalSieveResult & { fallbackActive?: boolean; fallbackReason?: string } = await response.json();
+        },
+        { retries: 2, timeoutMs: 45000 }
+      );
       
       if (data.fallbackActive) {
         setFallbackNotice(data.fallbackReason || "Modo de contingência ativado.");
@@ -242,16 +292,18 @@ export const TheologicalSieve: React.FC<TheologicalSieveProps> = ({
 
       setActiveResult(data);
 
-      // Save to local history
-      const updatedHistory = [data, ...history.filter(h => h.id !== data.id)].slice(0, 20);
+      // Save to local history & Cloud Firestore
+      const updatedHistory = [data, ...history.filter(h => h.id !== data.id)].slice(0, 30);
       setHistory(updatedHistory);
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedHistory));
       } catch {}
+      saveSieveResultToCloud(data, FIXED_PASTORAL_UID).catch(() => {});
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setErrorMessage(err.message || "Falha ao processar o Crivo Teológico.");
+      const errMsg = err instanceof Error ? err.message : "Falha ao processar o Crivo Teológico.";
+      setErrorMessage(errMsg);
     } finally {
       clearInterval(stepInterval);
       setIsAnalyzing(false);
@@ -354,6 +406,7 @@ ${activeResult.magisterialPeroration.pastoralCharge}
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     } catch {}
+    deleteSieveResultFromCloud(id, FIXED_PASTORAL_UID).catch(() => {});
   };
 
   return (
@@ -368,6 +421,27 @@ ${activeResult.magisterialPeroration.pastoralCharge}
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <span
+            title={
+              syncState === 'synced'
+                ? 'Sincronizado em tempo real com todos os dispositivos'
+                : syncState === 'syncing'
+                ? 'Conectando à nuvem...'
+                : 'Erro ao sincronizar com o Firestore'
+            }
+            className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-500 px-2 py-1"
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                syncState === 'synced'
+                  ? 'bg-emerald-500 animate-pulse'
+                  : syncState === 'syncing'
+                  ? 'bg-amber-400 animate-pulse'
+                  : 'bg-red-500'
+              }`}
+            />
+            <Cloud className="w-3.5 h-3.5 text-[#5A5A40]" />
+          </span>
           {history.length > 0 && (
             <button
               type="button"

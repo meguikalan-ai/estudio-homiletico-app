@@ -723,7 +723,11 @@ app.post("/api/gemini/evaluate-sermon", async (req, res) => {
   const { sermon } = req.body;
 
   if (!ai) {
-    return res.json(getMockEvaluation());
+    return res.json({
+      ...getMockEvaluation(),
+      fallbackActive: true,
+      fallbackReason: "Chave de API do Gemini (GEMINI_API_KEY) não configurada neste ambiente. O parecer avaliativo foi gerado em modo simulado."
+    });
   }
 
   const prompt = `
@@ -798,7 +802,13 @@ app.post("/api/gemini/generate-series", async (req, res) => {
   const { book, theme, campaign, sermonCount } = req.body;
 
   if (!ai) {
-    return res.json(getMockSeries(book, theme, campaign, sermonCount || 4));
+    const mockSeries = getMockSeries(book, theme, campaign, sermonCount || 4);
+    return res.json({
+      ...mockSeries,
+      id: `series_${Date.now()}`,
+      fallbackActive: true,
+      fallbackReason: "Chave de API do Gemini (GEMINI_API_KEY) não configurada neste ambiente. A série foi estruturada em modo simulado."
+    });
   }
 
   const prompt = `
@@ -833,12 +843,16 @@ Retorne no formato JSON exato:
       contents: prompt,
       systemInstruction: "Você é o Pr. Fernando Veiga. Seu foco é pregação bíblica expositiva de alta qualidade, estruturando séries integradas com divisões exegéticas inteligentes e títulos pregáveis."
     });
-    return res.json(data);
+    return res.json({
+      ...data,
+      id: data?.id || `series_${Date.now()}`
+    });
   } catch (error: any) {
     console.warn("Series Generation Error (falling back to simulated series):", error);
     const mockSeries = getMockSeries(book, theme, campaign, sermonCount || 4);
     return res.json({
       ...mockSeries,
+      id: `series_${Date.now()}`,
       fallbackActive: true,
       fallbackReason: "Limite de cota da API atingido (Código 429). A série de sermões expositivos foi estruturada de forma simulativa offline."
     });
@@ -852,7 +866,11 @@ app.post("/api/gemini/chat-bible", async (req, res) => {
   const baseScripture = scripture || "";
 
   if (!ai) {
-    return res.json(getMockChatResponse(baseScripture, userQuery));
+    return res.json({
+      ...getMockChatResponse(baseScripture, userQuery),
+      fallbackActive: true,
+      fallbackReason: "Chave de API do Gemini (GEMINI_API_KEY) não configurada neste ambiente. O Consultor Bíblico respondeu em modo de contingência simulada."
+    });
   }
 
   const formattedHistory = (chatHistory || []).map((h: any) => 
@@ -939,7 +957,11 @@ app.post("/api/gemini/compare-versions", async (req, res) => {
   const { scripture } = req.body;
 
   if (!ai) {
-    return res.json(getMockComparisons(scripture));
+    return res.json({
+      ...getMockComparisons(scripture),
+      fallbackActive: true,
+      fallbackReason: "Chave de API do Gemini (GEMINI_API_KEY) não configurada neste ambiente. Comparação bíblica exibida em modo simulado."
+    });
   }
 
   const prompt = `
@@ -986,7 +1008,11 @@ app.post("/api/gemini/explore-pericope", async (req, res) => {
   const { scripture } = req.body;
 
   if (!ai) {
-    return res.json(getMockPericopeAnalysis(scripture));
+    return res.json({
+      ...getMockPericopeAnalysis(scripture),
+      fallbackActive: true,
+      fallbackReason: "Chave de API do Gemini (GEMINI_API_KEY) não configurada neste ambiente. Análise da perícope exibida em modo simulado."
+    });
   }
 
   const prompt = `
@@ -1096,7 +1122,11 @@ app.post("/api/gemini/theological-sieve", async (req, res) => {
     : "1. O altar da consagração. 2. A resistência ao molde secular. 3. A mente transformada pela verdade.";
 
   if (!ai) {
-    return res.json(getMockTheologicalSieve(targetTitle, targetScripture, targetTheme, pointsContent));
+    return res.json({
+      ...getMockTheologicalSieve(targetTitle, targetScripture, targetTheme, pointsContent),
+      fallbackActive: true,
+      fallbackReason: "Chave de API do Gemini (GEMINI_API_KEY) não configurada neste ambiente. O Crivo Teológico respondeu em modo simulado."
+    });
   }
 
   const prompt = `
@@ -1745,7 +1775,11 @@ Retorne estritamente o JSON estruturado do publishSchema.
   } else {
     // Return high-fidelity simulated response for workspace flow
     const simulation = getSimulatedPipelineData(stage, data);
-    return res.json(simulation);
+    return res.json({
+      ...simulation,
+      fallbackActive: true,
+      fallbackReason: "Chave de API do Gemini (GEMINI_API_KEY) não configurada neste ambiente. Etapa processada em modo simulado."
+    });
   }
 });
 
@@ -1756,7 +1790,11 @@ app.post("/api/gemini/generate-illustrations", async (req, res) => {
   const { topic, type, scripture, visualStyle, aspectRatio, colorTone, pastoralFocus } = req.body;
 
   if (!ai) {
-    return res.json(getMockIllustrations(topic, type, scripture, visualStyle, aspectRatio, colorTone));
+    return res.json({
+      ...getMockIllustrations(topic, type, scripture, visualStyle, aspectRatio, colorTone),
+      fallbackActive: true,
+      fallbackReason: "Chave de API do Gemini (GEMINI_API_KEY) não configurada neste ambiente. Ilustrações geradas a partir do acervo simulado local."
+    });
   }
 
   const prompt = `
@@ -1830,7 +1868,11 @@ app.post("/api/gemini/improve-sermon", async (req, res) => {
   }
 
   if (!ai) {
-    return res.json(getMockImprovedSermon(sermon, improvement));
+    return res.json({
+      ...getMockImprovedSermon(sermon, improvement),
+      fallbackActive: true,
+      fallbackReason: "Chave de API do Gemini (GEMINI_API_KEY) não configurada neste ambiente. Revisão homilética aplicada pelo simulador local."
+    });
   }
 
   const prompt = `

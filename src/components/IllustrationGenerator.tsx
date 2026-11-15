@@ -5,11 +5,14 @@ import {
 } from 'lucide-react';
 import { VisualIllustration } from '../types';
 import { 
+  FIXED_PASTORAL_UID,
   saveIllustrationToCloud,
   deleteIllustrationFromCloud, 
-  fetchIllustrationsFromCloud, 
+  subscribeToIllustrations,
+  getDeletedIllustrationIds,
   syncAllLocalIllustrationsToCloud 
 } from '../services/sermonStorage';
+import { safeApiPost } from '../services/apiClient';
 
 interface IllustrationGeneratorProps {
   onSendToLaboratory?: (illustration: {
@@ -112,20 +115,21 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
     pastoralFocus: 'Fé e Confiança'
   });
 
-  // Gallery state loaded from localStorage (safeguarded)
+  // Gallery state loaded from localStorage (respecting deleted tombstones)
   const [illustrations, setIllustrations] = useState<VisualIllustration[]>(() => {
+    const deletedIds = getDeletedIllustrationIds();
     try {
       const saved = localStorage.getItem('pastoral_visual_illustrations');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          return parsed.filter((item: VisualIllustration) => !item.id || !deletedIds.has(item.id));
         }
       }
     } catch (e) {
       console.warn('Erro ao ler galeria de ilustrações:', e);
     }
-    return STARTER_ILLUSTRATIONS;
+    return STARTER_ILLUSTRATIONS.filter(item => !item.id || !deletedIds.has(item.id));
   });
 
   // Sync to localStorage
@@ -137,37 +141,44 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
     }
   }, [illustrations]);
 
-  // Initial cloud synchronization (merge and backup)
+  // Real-time cloud synchronization (onSnapshot + tombstones + initial local push)
   useEffect(() => {
     let isMounted = true;
-    const initCloud = async () => {
-      try {
-        const cloudItems = await fetchIllustrationsFromCloud();
-        if (isMounted && cloudItems.length > 0) {
-          setIllustrations(prevLocal => {
-            const localMap = new Map(prevLocal.map(item => [item.id || item.title, item]));
-            let hasNew = false;
-            cloudItems.forEach(cloudItem => {
-              const key = cloudItem.id || cloudItem.title;
-              if (!localMap.has(key)) {
-                localMap.set(key, cloudItem);
-                hasNew = true;
-              }
-            });
-            if (hasNew) {
-              return Array.from(localMap.values());
-            }
-            return prevLocal;
+
+    const unsub = subscribeToIllustrations(
+      FIXED_PASTORAL_UID,
+      (cloudItems, deletedIds) => {
+        if (!isMounted) return;
+        setIllustrations(prevLocal => {
+          const mergedMap = new Map<string, VisualIllustration>();
+          prevLocal.forEach(item => {
+            if (item.id && deletedIds.has(item.id)) return;
+            mergedMap.set(item.id || item.title, item);
           });
-        }
-        // Mirror local illustrations to cloud
-        await syncAllLocalIllustrationsToCloud(illustrations);
-      } catch (err) {
-        console.warn('Sincronização de ilustrações com Firestore offline ou indisponível:', err);
+          cloudItems.forEach(cloudItem => {
+            if (cloudItem.id && deletedIds.has(cloudItem.id)) return;
+            const key = cloudItem.id || cloudItem.title;
+            mergedMap.set(key, cloudItem);
+          });
+          const merged = Array.from(mergedMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          return merged;
+        });
+      },
+      (err) => {
+        console.warn('Listener em tempo real de ilustrações indisponível:', err);
+      }
+    );
+
+    syncAllLocalIllustrationsToCloud(illustrations, FIXED_PASTORAL_UID).catch(err => {
+      console.warn('Sincronização inicial de ilustrações com Firestore indisponível:', err);
+    });
+
+    return () => {
+      isMounted = false;
+      if (unsub) {
+        try { unsub(); } catch {}
       }
     };
-    initCloud();
-    return () => { isMounted = false; };
   }, []);
 
   const showToast = (msg: string) => {
@@ -289,37 +300,38 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
     setIsGenerating(true);
 
     try {
-      const response = await fetch('/api/gemini/generate-illustrations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await safeApiPost<{
+        illustrations?: VisualIllustration[];
+        fallbackActive?: boolean;
+        fallbackReason?: string;
+      }>(
+        '/api/gemini/generate-illustrations',
+        {
           topic: formData.topic.trim(),
           type: formData.type,
           scripture: formData.scripture.trim() || undefined,
           pastoralFocus: formData.pastoralFocus
-        })
-      });
+        },
+        { retries: 2, timeoutMs: 45000 }
+      );
 
       let createdIll: VisualIllustration | null = null;
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data && Array.isArray(data.illustrations) && data.illustrations.length > 0) {
-          const first = data.illustrations[0];
-          createdIll = {
-            id: `ill_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-            title: first.title || formData.topic.trim(),
-            type: (first.type || formData.type) as VisualIllustration['type'],
-            scripture: first.scripture || formData.scripture.trim() || undefined,
-            story: first.story,
-            moral: first.moral,
-            visualPrompt: first.visualPrompt,
-            visualStyle: first.visualStyle,
-            aspectRatio: first.aspectRatio as VisualIllustration['aspectRatio'],
-            colorTone: 'Tons Terrosos & Âmbar Sacro',
-            createdAt: Date.now()
-          };
-        }
+      if (data && Array.isArray(data.illustrations) && data.illustrations.length > 0) {
+        const first = data.illustrations[0];
+        createdIll = {
+          id: `ill_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          title: first.title || formData.topic.trim(),
+          type: (first.type || formData.type) as VisualIllustration['type'],
+          scripture: first.scripture || formData.scripture.trim() || undefined,
+          story: first.story,
+          moral: first.moral,
+          visualPrompt: first.visualPrompt,
+          visualStyle: first.visualStyle,
+          aspectRatio: first.aspectRatio as VisualIllustration['aspectRatio'],
+          colorTone: 'Tons Terrosos & Âmbar Sacro',
+          createdAt: Date.now()
+        };
       }
 
       if (!createdIll) {
@@ -335,11 +347,15 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
       setIllustrations(prev => [createdIll!, ...prev]);
 
       // Mirror to Firestore
-      saveIllustrationToCloud(createdIll).catch(err => {
+      saveIllustrationToCloud(createdIll, FIXED_PASTORAL_UID).catch(err => {
         console.warn('[Firestore] Falha ao espelhar nova ilustração na nuvem:', err);
       });
 
-      showToast('Nova ilustração criada e adicionada ao acervo!');
+      showToast(
+        data?.fallbackActive
+          ? (data.fallbackReason || 'Ilustração gerada em modo de contingência e salva!')
+          : 'Nova ilustração criada e sincronizada em todos os dispositivos!'
+      );
       setIsCreateModalOpen(false);
       // Reset form fields
       setFormData({

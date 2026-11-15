@@ -1,6 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Sparkles, BookOpen, Layers, RefreshCw, Trash2, ArrowDown, Copy, Check, Feather } from 'lucide-react';
+import { Send, Bot, User, Sparkles, BookOpen, Layers, RefreshCw, Trash2, ArrowDown, Copy, Check, Feather, Cloud, AlertTriangle } from 'lucide-react';
 import { TheologicalChatMessage, ExegesisResponse } from '../types';
+import {
+  FIXED_PASTORAL_UID,
+  saveChatMessageToCloud,
+  clearChatHistoryInCloud,
+  syncAllLocalChatToCloud,
+  subscribeToTheologicalChat
+} from '../services/sermonStorage';
+import { safeApiPost } from '../services/apiClient';
 
 interface TheologicalChatProps {
   onSendToLaboratory?: (content: string, exegesisData?: ExegesisResponse, passage?: string) => void;
@@ -162,10 +170,57 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+  const [syncState, setSyncState] = useState<'synced' | 'syncing' | 'error'>('syncing');
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [sentMessageId, setSentMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Real-time Firestore synchronization for Consultor Bíblico across all devices
+  useEffect(() => {
+    let isMounted = true;
+    const unsub = subscribeToTheologicalChat(
+      FIXED_PASTORAL_UID,
+      (cloudMessages, clearedAt) => {
+        if (!isMounted) return;
+        setSyncState('synced');
+        setMessages(prev => {
+          const mergedMap = new Map<string, TheologicalChatMessage>();
+          // Keep non-welcome local messages newer than clearedAt
+          prev.forEach(m => {
+            if (m && m.id !== 'welcome-msg' && (m.timestamp || 0) > clearedAt) {
+              mergedMap.set(m.id, m);
+            }
+          });
+          cloudMessages.forEach(cm => {
+            if (cm && cm.id && cm.id !== 'welcome-msg') {
+              mergedMap.set(cm.id, cm);
+            }
+          });
+          const sorted = Array.from(mergedMap.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+          const welcome = prev.find(m => m.id === 'welcome-msg') || INITIAL_MESSAGES[0];
+          const next = [welcome, ...sorted];
+          try {
+            localStorage.setItem('pastoral_theological_chat', JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+      },
+      () => {
+        if (isMounted) setSyncState('error');
+      }
+    );
+
+    syncAllLocalChatToCloud(messages, FIXED_PASTORAL_UID).catch(() => {});
+
+    return () => {
+      isMounted = false;
+      if (unsub) {
+        try { unsub(); } catch {}
+      }
+    };
+  }, []);
 
   const handleSendToLaboratoryAction = (msg: TheologicalChatMessage) => {
     const fullText = getFullMessageText(msg);
@@ -233,6 +288,7 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
     if (!textToSend || isLoading) return;
 
     setErrorNotice(null);
+    setFallbackNotice(null);
     const userMsgId = `user-${Date.now()}`;
     const userMessage: TheologicalChatMessage = {
       id: userMsgId,
@@ -243,31 +299,29 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
 
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
+    saveChatMessageToCloud(userMessage, FIXED_PASTORAL_UID).catch(() => {});
     if (!customText) setInputMessage('');
     setIsLoading(true);
 
     try {
-      // Build brief history for context
       const chatHistory = updatedMessages.slice(-8).map(m => ({
         role: m.role,
         content: m.content
       }));
 
-      const response = await fetch('/api/gemini/chat-bible', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await safeApiPost<ExegesisResponse & { fallbackActive?: boolean; fallbackReason?: string }>(
+        '/api/gemini/chat-bible',
+        {
           message: textToSend,
           chatHistory
-        })
-      });
+        },
+        { retries: 2, timeoutMs: 45000 }
+      );
 
-      if (!response.ok) {
-        throw new Error('Falha de comunicação com o assistente.');
+      if (data.fallbackActive) {
+        setFallbackNotice(data.fallbackReason || 'Consulta processada em regime de contingência.');
       }
 
-      const data: ExegesisResponse = await response.json();
-      
       const assistantMessage: TheologicalChatMessage = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
@@ -277,9 +331,11 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
       };
 
       setMessages(prev => [...prev, assistantMessage]);
-    } catch (err: any) {
+      saveChatMessageToCloud(assistantMessage, FIXED_PASTORAL_UID).catch(() => {});
+    } catch (err: unknown) {
       console.error(err);
-      setErrorNotice('Não foi possível obter resposta no momento. Verifique a conexão com o servidor.');
+      const errMsg = err instanceof Error ? err.message : 'Não foi possível obter resposta no momento.';
+      setErrorNotice(`Falha ao consultar o assistente: ${errMsg}. Verifique a conexão com o servidor.`);
     } finally {
       setIsLoading(false);
       setTimeout(() => textareaRef.current?.focus(), 100);
@@ -294,9 +350,10 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
   };
 
   const handleClearHistory = () => {
-    if (window.confirm('Deseja limpar todo o histórico desta conversa de estudo?')) {
+    if (window.confirm('Deseja limpar todo o histórico desta conversa de estudo em todos os dispositivos?')) {
       setMessages(INITIAL_MESSAGES);
       localStorage.removeItem('pastoral_theological_chat');
+      clearChatHistoryInCloud(FIXED_PASTORAL_UID).catch(() => {});
     }
   };
 
@@ -317,6 +374,27 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
         </div>
 
         <div className="flex items-center gap-2">
+          <span
+            title={
+              syncState === 'synced'
+                ? 'Sincronizado em tempo real com todos os dispositivos'
+                : syncState === 'syncing'
+                ? 'Conectando à nuvem...'
+                : 'Erro ao sincronizar com o Firestore'
+            }
+            className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-500 px-2 py-1"
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                syncState === 'synced'
+                  ? 'bg-emerald-500 animate-pulse'
+                  : syncState === 'syncing'
+                  ? 'bg-amber-400 animate-pulse'
+                  : 'bg-red-500'
+              }`}
+            />
+            <Cloud className="w-3.5 h-3.5 text-[#5A5A40]" />
+          </span>
           {messages.length > 1 && (
             <button
               onClick={handleClearHistory}
@@ -329,6 +407,22 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
           )}
         </div>
       </div>
+
+      {fallbackNotice && (
+        <div className="mx-4 mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>{fallbackNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFallbackNotice(null)}
+            className="font-bold px-2 py-0.5 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Chat Messages Scroll Area */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-[#FDFBF7]/40">

@@ -21,6 +21,18 @@ service cloud.firestore {
         allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
       }
 
+      match /theological_chat/{messageId} {
+        allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
+      }
+
+      match /theological_sieve/{sieveId} {
+        allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
+      }
+
+      match /chat_meta/{metaId} {
+        allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
+      }
+
       match /tombstones/{tombstoneId} {
         allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
       }
@@ -41,7 +53,7 @@ service cloud.firestore {
     }
 
     match /tombstones/{tombstoneId} {
-      allow read, write: if true;
+      allow read, write: if resource == null || resource.data.userId == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || request.resource.data.userId == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1');
     }
   }
 }

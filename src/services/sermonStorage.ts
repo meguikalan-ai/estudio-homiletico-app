@@ -3,10 +3,14 @@ import {
   collection, 
   doc, 
   setDoc, 
+  getDoc,
+  getDocFromServer,
   getDocs, 
+  getDocsFromServer,
   deleteDoc, 
   query,
   where,
+  orderBy,
   onSnapshot, 
   writeBatch,
   firestoreDatabaseId,
@@ -16,16 +20,23 @@ import {
   type DocumentData,
   type QuerySnapshot
 } from '../firebase';
-import { Sermon, ExpositorySeries, VisualIllustration } from '../types';
+import { Sermon, ExpositorySeries, VisualIllustration, TheologicalChatMessage, TheologicalSieveResult } from '../types';
 
 export const PASTORAL_SERMONS_COLLECTION = 'pastoral_sermons';
 export const SERMONS_COLLECTION = 'sermons';
 export const SERIES_COLLECTION = 'series';
 export const TOMBSTONES_COLLECTION = 'tombstones';
 export const ILLUSTRATIONS_COLLECTION = 'illustrations';
+export const THEOLOGICAL_CHAT_COLLECTION = 'theological_chat';
+export const THEOLOGICAL_SIEVE_COLLECTION = 'theological_sieve';
+export const CHAT_META_COLLECTION = 'chat_meta';
 export const LOCAL_STORAGE_KEY = 'pastoral_sermons';
 export const LOCAL_STORAGE_DELETED_KEY = 'pastoral_deleted_sermon_ids';
 export const LOCAL_STORAGE_ILLUSTRATIONS_KEY = 'pastoral_visual_illustrations';
+export const LOCAL_STORAGE_DELETED_ILL_KEY = 'pastoral_deleted_illustration_ids';
+export const LOCAL_STORAGE_CHAT_KEY = 'pastoral_theological_chat';
+export const LOCAL_STORAGE_SIEVE_KEY = 'theological_sieve_history';
+export const LOCAL_STORAGE_DELETED_SIEVE_KEY = 'pastoral_deleted_sieve_ids';
 
 // Rastreamento do último erro do Firestore para diagnósticos na UI
 let lastFirestoreError: string | null = null;
@@ -577,7 +588,7 @@ export async function testFirestoreConnection(overrideUid?: string): Promise<{
   const start = performance.now();
   try {
     const colRef = collection(db, 'users', uid, PASTORAL_SERMONS_COLLECTION);
-    const snapshot = await getDocs(colRef);
+    const snapshot = await getDocsFromServer(colRef);
     result.latencyMs = Math.round(performance.now() - start);
     result.connected = true;
     result.cloudSermonCount = snapshot.docs.length;
@@ -835,17 +846,26 @@ export function subscribeToUserSermons(
   }
 
   try {
-    const cloudTombstoneIds = new Set<string>();
+    const cloudTombstones = new Map<string, number>();
     const userPastoralMap = new Map<string, Sermon>();
     const rootPastoralMap = new Map<string, Sermon>();
     const legacySermonsMap = new Map<string, Sermon>();
+
+    const isTombstoned = (id: string, sermon?: Sermon): boolean => {
+      if (id.startsWith('ill_') || id.startsWith('sieve_')) return true;
+      const deletedAt = cloudTombstones.get(id);
+      if (deletedAt === undefined) return false;
+      if (!sermon) return true;
+      const sermonTime = sermon.updatedAt || new Date(sermon.date).getTime() || 0;
+      return deletedAt >= sermonTime;
+    };
 
     const emitAggregatedSermons = () => {
       const consolidatedMap = new Map<string, Sermon>();
 
       const mergeMapIntoConsolidated = (sourceMap: Map<string, Sermon>) => {
         sourceMap.forEach((sermon, id) => {
-          if (!sermon || isSermonBlank(sermon) || isModelSermon(sermon) || cloudTombstoneIds.has(id)) {
+          if (!sermon || isSermonBlank(sermon) || isModelSermon(sermon) || isTombstoned(id, sermon)) {
             return;
           }
           const existing = consolidatedMap.get(id);
@@ -882,15 +902,36 @@ export function subscribeToUserSermons(
       onUpdate(consolidatedList);
     };
 
+    const reportListenerError = (source: string, error: unknown) => {
+      const errObj = error as { code?: string; message?: string };
+      const code = errObj?.code || 'firestore/listener-error';
+      const errMsg = errObj?.message || (error instanceof Error ? error.message : String(error));
+      console.error(`[Firestore ${source} Listener]:`, error);
+      setLastFirestoreError(`[${code}] ${errMsg}`);
+      recordSyncLog('error', `Falha no listener ${source}: [${code}] ${errMsg}`);
+      notifyFirestoreError({
+        code,
+        message: errMsg,
+        path: `users/${uid}/${source}`,
+        timestamp: Date.now()
+      });
+      if (onError) onError(error);
+    };
+
     // 1. Ouvinte para tombstones em tempo real
     const tombstoneUnsub = onSnapshot(
       collection(db, 'users', uid, TOMBSTONES_COLLECTION),
       (tombstoneSnap) => {
-        cloudTombstoneIds.clear();
+        cloudTombstones.clear();
         const localDeleted = getDeletedSermonIds();
         tombstoneSnap.forEach((docSnap) => {
-          cloudTombstoneIds.add(docSnap.id);
-          localDeleted.add(docSnap.id);
+          const data = docSnap.data() as { id?: string; deletedAt?: number; entityType?: string };
+          if (docSnap.id.startsWith('ill_') || docSnap.id.startsWith('sieve_') || data?.entityType === 'illustration' || data?.entityType === 'sieve') {
+            return;
+          }
+          const targetId = data?.id || docSnap.id;
+          cloudTombstones.set(targetId, Number(data?.deletedAt) || Date.now());
+          localDeleted.add(targetId);
         });
         try {
           localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(Array.from(localDeleted)));
@@ -898,9 +939,7 @@ export function subscribeToUserSermons(
         emitAggregatedSermons();
       },
       (err: unknown) => {
-        const errMsg = (err instanceof Error) ? err.message : String(err);
-        setLastFirestoreError(errMsg);
-        console.warn("[Firestore Tombstones Listener]:", err);
+        reportListenerError(TOMBSTONES_COLLECTION, err);
       }
     );
 
@@ -912,15 +951,14 @@ export function subscribeToUserSermons(
         snapshot.forEach((docSnap) => {
           const data = docSnap.data() as Sermon;
           const sermonId = data?.id || docSnap.id;
-          if (data && !isSermonBlank(data) && !isModelSermon(data)) {
-            unmarkSermonAsDeleted(sermonId);
+          if (data && !isSermonBlank(data) && !isModelSermon(data) && !isTombstoned(sermonId, data)) {
             userPastoralMap.set(sermonId, { ...data, id: sermonId });
           }
         });
         emitAggregatedSermons();
       },
       (error: unknown) => {
-        console.warn("[Firestore user pastoral_sermons listener]:", error);
+        reportListenerError(PASTORAL_SERMONS_COLLECTION, error);
       }
     );
 
@@ -934,8 +972,7 @@ export function subscribeToUserSermons(
           snapshot.forEach((docSnap) => {
             const data = docSnap.data() as Sermon;
             const sermonId = data?.id || docSnap.id;
-            if (data && !isSermonBlank(data) && !isModelSermon(data)) {
-              unmarkSermonAsDeleted(sermonId);
+            if (data && !isSermonBlank(data) && !isModelSermon(data) && !isTombstoned(sermonId, data)) {
               rootPastoralMap.set(sermonId, { ...data, id: sermonId });
             }
           });
@@ -955,8 +992,7 @@ export function subscribeToUserSermons(
         snapshot.forEach((docSnap) => {
           const data = docSnap.data() as Sermon;
           const sermonId = data?.id || docSnap.id;
-          if (data && !isSermonBlank(data) && !isModelSermon(data)) {
-            unmarkSermonAsDeleted(sermonId);
+          if (data && !isSermonBlank(data) && !isModelSermon(data) && !isTombstoned(sermonId, data)) {
             legacySermonsMap.set(sermonId, { ...data, id: sermonId });
           }
         });
@@ -1016,9 +1052,9 @@ export function smartMergeSermons(localSermons: Sermon[], cloudSermons: Sermon[]
   const map = new Map<string, Sermon>();
   const deletedIds = getDeletedSermonIds();
 
-  // 1. Inserir todos os sermões locais primeiro (NUNCA apaga sermões locais)
+  // 1. Inserir todos os sermões locais não excluídos (NUNCA apaga sermões locais válidos)
   for (const localSermon of localSermons) {
-    if (!localSermon || isSermonBlank(localSermon) || isModelSermon(localSermon)) continue;
+    if (!localSermon || isSermonBlank(localSermon) || isModelSermon(localSermon) || deletedIds.has(localSermon.id)) continue;
     map.set(localSermon.id, localSermon);
   }
 
@@ -1059,9 +1095,11 @@ export async function saveSeriesToCloud(series: ExpositorySeries, userId?: strin
   if (!uid) return false;
 
   try {
-    const docRef = doc(db, 'users', uid, SERIES_COLLECTION, series.id);
+    const seriesId = (series.id && series.id.trim()) ? series.id.trim() : `series_${Date.now()}`;
+    const docRef = doc(db, 'users', uid, SERIES_COLLECTION, seriesId);
     const data = removeUndefinedFields({
       ...series,
+      id: seriesId,
       userId: uid,
       updatedAt: Date.now()
     });
@@ -1174,11 +1212,32 @@ export async function syncAllLocalSermonsToCloud(
       getDocs(collection(db, 'users', uid, SERMONS_COLLECTION))
     ]);
 
-    // Reconciliar lista de tombstones
-    const deletedIds = getDeletedSermonIds();
-    if (tombstonesSnap.status === 'fulfilled' && tombstonesSnap.value) {
-      tombstonesSnap.value.forEach(docSnap => deletedIds.add(docSnap.id));
+    if (pastoralSnap.status === 'rejected') {
+      const reason = pastoralSnap.reason as { code?: string; message?: string };
+      const errMsg = reason?.message || String(pastoralSnap.reason || 'Falha ao consultar Firestore');
+      setLastFirestoreError(errMsg);
+      recordSyncLog('error', `Falha ao ler acervo na nuvem: ${errMsg}`);
+      return { syncedCount: 0, cloudSermons: [], cloudCount: 0, error: errMsg };
     }
+
+    // Reconciliar lista de tombstones (nuvem é autoritativa para exclusões)
+    const deletedIds = getDeletedSermonIds();
+    const cloudTombstoneTimes = new Map<string, number>();
+    if (tombstonesSnap.status === 'fulfilled' && tombstonesSnap.value) {
+      tombstonesSnap.value.forEach(docSnap => {
+        const data = docSnap.data() as { id?: string; deletedAt?: number; entityType?: string };
+        if (docSnap.id.startsWith('ill_') || docSnap.id.startsWith('sieve_') || data?.entityType === 'illustration' || data?.entityType === 'sieve') {
+          return;
+        }
+        const targetId = data?.id || docSnap.id;
+        deletedIds.add(targetId);
+        cloudTombstoneTimes.set(targetId, Number(data?.deletedAt) || Date.now());
+      });
+    }
+
+    try {
+      localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(Array.from(deletedIds)));
+    } catch {}
 
     // Mapear sermões existentes na nuvem
     const cloudMap = new Map<string, number>();
@@ -1191,6 +1250,10 @@ export async function syncAllLocalSermonsToCloud(
           if (data) {
             const sermonId = data.id || docSnap.id;
             const docTime = data.updatedAt || new Date(data.date).getTime() || 0;
+            const tombTime = cloudTombstoneTimes.get(sermonId);
+            if (tombTime !== undefined && tombTime >= docTime) {
+              return;
+            }
             const prevTime = cloudMap.get(sermonId) || 0;
             if (docTime >= prevTime) {
               cloudMap.set(sermonId, docTime);
@@ -1206,19 +1269,7 @@ export async function syncAllLocalSermonsToCloud(
     processSnapshotDocs(pastoralSnap);
     processSnapshotDocs(legacySnap);
 
-    // Se um sermão local tiver conteúdo real, desmarca qualquer deletedId residual
-    for (const s of targetList) {
-      if (s && !isSermonBlank(s) && !isModelSermon(s)) {
-        if (deletedIds.has(s.id)) {
-          deletedIds.delete(s.id);
-          unmarkSermonAsDeleted(s.id);
-        }
-      }
-    }
-    try {
-      localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(Array.from(deletedIds)));
-    } catch {}
-
+    // Respeita estritamente tombstones (locais e da nuvem) para nunca ressuscitar sermões excluídos
     const validSermons = targetList.filter(s => s && !isSermonBlank(s) && !isModelSermon(s) && !deletedIds.has(s.id));
     const toUpload: { docRef: DocumentReference; data: Record<string, unknown> }[] = [];
 
@@ -1279,9 +1330,38 @@ export async function syncAllLocalSermonsToCloud(
  * Keeps backward compatibility with pastoral_sermons.
  */
 export async function migrateLocalSermonsToCloud(userId?: string): Promise<{ migratedCount: number }> {
-  return (await syncAllLocalSermonsToCloud(undefined, userId)).syncedCount !== undefined 
-    ? { migratedCount: (await syncAllLocalSermonsToCloud(undefined, userId)).syncedCount }
-    : { migratedCount: 0 };
+  const res = await syncAllLocalSermonsToCloud(undefined, userId);
+  return { migratedCount: res.syncedCount || 0 };
+}
+
+// ==================== ILUSTRAÇÕES HOMILÉTICAS (REAL-TIME SYNC + TOMBSTONES) ====================
+
+export function getDeletedIllustrationIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_DELETED_ILL_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function markIllustrationAsDeleted(id: string): void {
+  if (!id) return;
+  try {
+    const set = getDeletedIllustrationIds();
+    set.add(id);
+    localStorage.setItem(LOCAL_STORAGE_DELETED_ILL_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
+export function unmarkIllustrationAsDeleted(id: string): void {
+  if (!id) return;
+  try {
+    const set = getDeletedIllustrationIds();
+    if (set.delete(id)) {
+      localStorage.setItem(LOCAL_STORAGE_DELETED_ILL_KEY, JSON.stringify(Array.from(set)));
+    }
+  } catch {}
 }
 
 /**
@@ -1294,13 +1374,18 @@ export async function saveIllustrationToCloud(illustration: VisualIllustration, 
 
   try {
     const id = illustration.id || `ill_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    unmarkIllustrationAsDeleted(id);
     const docRef = doc(db, 'users', uid, ILLUSTRATIONS_COLLECTION, id);
     const sanitized = removeUndefinedFields({
       ...illustration,
       id,
+      userId: uid,
       updatedAt: Date.now()
     });
     await setDoc(docRef, sanitized, { merge: true });
+    try {
+      await deleteDoc(doc(db, 'users', uid, TOMBSTONES_COLLECTION, `ill_${id}`));
+    } catch {}
     setLastFirestoreError(null);
     recordSyncLog('upload', `Ilustração gravada em users/${uid}/illustrations: "${illustration.title}"`);
     return true;
@@ -1314,18 +1399,26 @@ export async function saveIllustrationToCloud(illustration: VisualIllustration, 
 }
 
 /**
- * Delete an illustration from Firestore at users/{uid}/illustrations/{id}
+ * Delete an illustration from Firestore at users/{uid}/illustrations/{id} with cross-device tombstone
  */
 export async function deleteIllustrationFromCloud(illustrationId: string, userId?: string): Promise<boolean> {
+  if (!illustrationId) return false;
+  markIllustrationAsDeleted(illustrationId);
   if (!db) return true;
   const uid = getEffectiveUid(userId);
   if (!uid) return true;
 
   try {
-    const docRef = doc(db, 'users', uid, ILLUSTRATIONS_COLLECTION, illustrationId);
-    await deleteDoc(docRef);
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'users', uid, ILLUSTRATIONS_COLLECTION, illustrationId)),
+      setDoc(doc(db, 'users', uid, TOMBSTONES_COLLECTION, `ill_${illustrationId}`), {
+        id: illustrationId,
+        entityType: 'illustration',
+        deletedAt: Date.now()
+      })
+    ]);
     setLastFirestoreError(null);
-    recordSyncLog('delete', `Ilustração removida de users/${uid}/illustrations: ${illustrationId}`);
+    recordSyncLog('delete', `Ilustração removida em todos os dispositivos: ${illustrationId}`);
     return true;
   } catch (err: unknown) {
     const errMsg = (err instanceof Error) ? err.message : String(err);
@@ -1344,14 +1437,30 @@ export async function fetchIllustrationsFromCloud(userId?: string): Promise<Visu
   if (!uid) return [];
 
   try {
-    const snapshot = await getDocs(collection(db, 'users', uid, ILLUSTRATIONS_COLLECTION));
+    const [snapshot, tombSnap] = await Promise.all([
+      getDocs(collection(db, 'users', uid, ILLUSTRATIONS_COLLECTION)),
+      getDocs(collection(db, 'users', uid, TOMBSTONES_COLLECTION))
+    ]);
+    const deletedIllIds = getDeletedIllustrationIds();
+    tombSnap.forEach(d => {
+      const data = d.data() as { id?: string; entityType?: string };
+      if (d.id.startsWith('ill_') || data?.entityType === 'illustration') {
+        const targetId = data?.id || d.id.replace(/^ill_/, '');
+        deletedIllIds.add(targetId);
+      }
+    });
+    try {
+      localStorage.setItem(LOCAL_STORAGE_DELETED_ILL_KEY, JSON.stringify(Array.from(deletedIllIds)));
+    } catch {}
+
     const list: VisualIllustration[] = [];
     snapshot.forEach(docSnap => {
       const data = docSnap.data() as VisualIllustration;
-      if (data && data.title) {
+      if (data && data.title && !deletedIllIds.has(docSnap.id)) {
         list.push({ ...data, id: docSnap.id });
       }
     });
+    list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     setLastFirestoreError(null);
     return list;
   } catch (err: unknown) {
@@ -1363,7 +1472,80 @@ export async function fetchIllustrationsFromCloud(userId?: string): Promise<Visu
 }
 
 /**
- * Sync all local illustrations to Firestore at users/{uid}/illustrations
+ * Real-time subscription to illustrations and illustration tombstones on Firestore
+ */
+export function subscribeToIllustrations(
+  userId: string | undefined,
+  onUpdate: (illustrations: VisualIllustration[], deletedIds: Set<string>) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe | null {
+  if (!db) return null;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return null;
+
+  try {
+    const cloudMap = new Map<string, VisualIllustration>();
+    const tombstones = new Set<string>(getDeletedIllustrationIds());
+
+    const emit = () => {
+      const list = Array.from(cloudMap.values()).filter(item => item.id && !tombstones.has(item.id));
+      list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      onUpdate(list, new Set(tombstones));
+    };
+
+    const unsubTomb = onSnapshot(
+      collection(db, 'users', uid, TOMBSTONES_COLLECTION),
+      (snap) => {
+        const localDeleted = getDeletedIllustrationIds();
+        tombstones.clear();
+        localDeleted.forEach(id => tombstones.add(id));
+        snap.forEach(d => {
+          const data = d.data() as { id?: string; entityType?: string };
+          if (d.id.startsWith('ill_') || data?.entityType === 'illustration') {
+            const targetId = data?.id || d.id.replace(/^ill_/, '');
+            tombstones.add(targetId);
+          }
+        });
+        try {
+          localStorage.setItem(LOCAL_STORAGE_DELETED_ILL_KEY, JSON.stringify(Array.from(tombstones)));
+        } catch {}
+        emit();
+      },
+      (err) => {
+        console.warn('[Firestore Illustrations Tombstones Listener]:', err);
+      }
+    );
+
+    const unsubIll = onSnapshot(
+      collection(db, 'users', uid, ILLUSTRATIONS_COLLECTION),
+      (snap) => {
+        cloudMap.clear();
+        snap.forEach(d => {
+          const data = d.data() as VisualIllustration;
+          if (data && data.title && !tombstones.has(d.id)) {
+            cloudMap.set(d.id, { ...data, id: d.id });
+          }
+        });
+        emit();
+      },
+      (err) => {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        setLastFirestoreError(errMsg);
+        if (onError) onError(err);
+      }
+    );
+
+    return () => {
+      try { unsubTomb(); unsubIll(); } catch {}
+    };
+  } catch (err) {
+    if (onError) onError(err);
+    return null;
+  }
+}
+
+/**
+ * Sync all local illustrations to Firestore at users/{uid}/illustrations (respecting deleted tombstones)
  */
 export async function syncAllLocalIllustrationsToCloud(localList?: VisualIllustration[], userId?: string): Promise<number> {
   if (!db) return 0;
@@ -1378,7 +1560,19 @@ export async function syncAllLocalIllustrationsToCloud(localList?: VisualIllustr
     }
     if (!list || list.length === 0) return 0;
 
-    const snapshot = await getDocs(collection(db, 'users', uid, ILLUSTRATIONS_COLLECTION));
+    const [snapshot, tombSnap] = await Promise.all([
+      getDocs(collection(db, 'users', uid, ILLUSTRATIONS_COLLECTION)),
+      getDocs(collection(db, 'users', uid, TOMBSTONES_COLLECTION))
+    ]);
+
+    const deletedIllIds = getDeletedIllustrationIds();
+    tombSnap.forEach(d => {
+      const data = d.data() as { id?: string; entityType?: string };
+      if (d.id.startsWith('ill_') || data?.entityType === 'illustration') {
+        deletedIllIds.add(data?.id || d.id.replace(/^ill_/, ''));
+      }
+    });
+
     const cloudIds = new Set<string>();
     snapshot.forEach(docSnap => cloudIds.add(docSnap.id));
 
@@ -1386,9 +1580,9 @@ export async function syncAllLocalIllustrationsToCloud(localList?: VisualIllustr
     const batch = writeBatch(db);
     for (const ill of list) {
       const id = ill.id || `ill_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-      if (!cloudIds.has(id)) {
+      if (!cloudIds.has(id) && !deletedIllIds.has(id)) {
         const docRef = doc(db, 'users', uid, ILLUSTRATIONS_COLLECTION, id);
-        batch.set(docRef, removeUndefinedFields({ ...ill, id, updatedAt: Date.now() }), { merge: true });
+        batch.set(docRef, removeUndefinedFields({ ...ill, id, userId: uid, updatedAt: Date.now() }), { merge: true });
         uploaded++;
       }
     }
@@ -1403,5 +1597,323 @@ export async function syncAllLocalIllustrationsToCloud(localList?: VisualIllustr
     setLastFirestoreError(errMsg);
     console.warn(`[Firestore] Erro ao sincronizar ilustrações em users/${uid}/illustrations:`, err);
     return 0;
+  }
+}
+
+// ==================== CONSULTOR BÍBLICO E TEOLÓGICO (REAL-TIME SYNC) ====================
+
+export async function saveChatMessageToCloud(msg: TheologicalChatMessage, userId?: string): Promise<boolean> {
+  if (!db || !msg || msg.id === 'welcome-msg') return false;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return false;
+
+  try {
+    const docRef = doc(db, 'users', uid, THEOLOGICAL_CHAT_COLLECTION, msg.id);
+    const payload = cleanUndefinedRecursively({
+      ...msg,
+      userId: uid,
+      updatedAt: msg.timestamp || Date.now()
+    });
+    await setDoc(docRef, payload, { merge: true });
+    setLastFirestoreError(null);
+    recordSyncLog('upload', `Consulta teológica sincronizada em todos os dispositivos`, `ID: ${msg.id}`);
+    return true;
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    setLastFirestoreError(errMsg);
+    recordSyncLog('error', `Falha ao sincronizar mensagem do Consultor Bíblico: ${errMsg}`);
+    return false;
+  }
+}
+
+export async function clearChatHistoryInCloud(userId?: string): Promise<boolean> {
+  if (!db) return true;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return true;
+
+  try {
+    const clearedAt = Date.now();
+    const snapshot = await getDocs(collection(db, 'users', uid, THEOLOGICAL_CHAT_COLLECTION));
+    const batch = writeBatch(db);
+    snapshot.forEach(d => batch.delete(d.ref));
+    batch.set(doc(db, 'users', uid, CHAT_META_COLLECTION, 'state'), { clearedAt, updatedAt: clearedAt }, { merge: true });
+    await batch.commit();
+    setLastFirestoreError(null);
+    recordSyncLog('delete', 'Histórico do Consultor Bíblico limpo em todos os dispositivos');
+    return true;
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    setLastFirestoreError(errMsg);
+    recordSyncLog('error', `Erro ao limpar histórico do Consultor Bíblico na nuvem: ${errMsg}`);
+    return false;
+  }
+}
+
+export async function syncAllLocalChatToCloud(messages: TheologicalChatMessage[], userId?: string): Promise<number> {
+  if (!db || !messages || messages.length === 0) return 0;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return 0;
+
+  try {
+    const [chatSnap, metaSnap] = await Promise.all([
+      getDocs(collection(db, 'users', uid, THEOLOGICAL_CHAT_COLLECTION)),
+      getDoc(doc(db, 'users', uid, CHAT_META_COLLECTION, 'state'))
+    ]);
+    const clearedAt = metaSnap.exists() ? Number((metaSnap.data() as { clearedAt?: number })?.clearedAt || 0) : 0;
+    const existingIds = new Set<string>();
+    chatSnap.forEach(d => existingIds.add(d.id));
+
+    const toUpload = messages.filter(
+      m => m && m.id && m.id !== 'welcome-msg' && !existingIds.has(m.id) && (m.timestamp || 0) > clearedAt
+    );
+    if (toUpload.length === 0) return 0;
+
+    const batch = writeBatch(db);
+    for (const msg of toUpload) {
+      const ref = doc(db, 'users', uid, THEOLOGICAL_CHAT_COLLECTION, msg.id);
+      batch.set(ref, cleanUndefinedRecursively({ ...msg, userId: uid, updatedAt: msg.timestamp || Date.now() }), { merge: true });
+    }
+    await batch.commit();
+    setLastFirestoreError(null);
+    return toUpload.length;
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    setLastFirestoreError(errMsg);
+    return 0;
+  }
+}
+
+export function subscribeToTheologicalChat(
+  userId: string | undefined,
+  onUpdate: (messages: TheologicalChatMessage[], clearedAt: number) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe | null {
+  if (!db) return null;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return null;
+
+  try {
+    let currentMessages: TheologicalChatMessage[] = [];
+    let currentClearedAt = 0;
+
+    const emit = () => {
+      const filtered = currentMessages
+        .filter(m => m && m.id !== 'welcome-msg' && (m.timestamp || 0) > currentClearedAt)
+        .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      onUpdate(filtered, currentClearedAt);
+    };
+
+    const unsubMeta = onSnapshot(
+      doc(db, 'users', uid, CHAT_META_COLLECTION, 'state'),
+      (snap) => {
+        if (snap.exists()) {
+          currentClearedAt = Number((snap.data() as { clearedAt?: number })?.clearedAt || 0);
+        }
+        emit();
+      },
+      (err) => {
+        console.warn('[Firestore Chat Meta Listener]:', err);
+      }
+    );
+
+    const unsubChat = onSnapshot(
+      query(collection(db, 'users', uid, THEOLOGICAL_CHAT_COLLECTION), orderBy('timestamp', 'asc')),
+      (snap) => {
+        const list: TheologicalChatMessage[] = [];
+        snap.forEach(d => {
+          const data = d.data() as TheologicalChatMessage;
+          if (data && data.content) {
+            list.push({ ...data, id: data.id || d.id });
+          }
+        });
+        currentMessages = list;
+        setLastFirestoreError(null);
+        emit();
+      },
+      (err) => {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        setLastFirestoreError(errMsg);
+        recordSyncLog('error', `Erro no listener do Consultor Bíblico: ${errMsg}`);
+        if (onError) onError(err);
+      }
+    );
+
+    return () => {
+      try { unsubMeta(); unsubChat(); } catch {}
+    };
+  } catch (err) {
+    if (onError) onError(err);
+    return null;
+  }
+}
+
+// ==================== CRIVO TEOLÓGICO (REAL-TIME SYNC + TOMBSTONES) ====================
+
+export function getDeletedSieveIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_DELETED_SIEVE_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function markSieveAsDeleted(id: string): void {
+  if (!id) return;
+  try {
+    const set = getDeletedSieveIds();
+    set.add(id);
+    localStorage.setItem(LOCAL_STORAGE_DELETED_SIEVE_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
+export async function saveSieveResultToCloud(entry: TheologicalSieveResult, userId?: string): Promise<boolean> {
+  if (!db || !entry) return false;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return false;
+
+  try {
+    const id = entry.id || `sieve-${Date.now()}`;
+    const docRef = doc(db, 'users', uid, THEOLOGICAL_SIEVE_COLLECTION, id);
+    await setDoc(docRef, cleanUndefinedRecursively({ ...entry, id, userId: uid, updatedAt: entry.createdAt || Date.now() }), { merge: true });
+    setLastFirestoreError(null);
+    recordSyncLog('upload', `Crivo Teológico sincronizado na nuvem: "${entry.sermonTitle}"`);
+    return true;
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    setLastFirestoreError(errMsg);
+    return false;
+  }
+}
+
+export async function deleteSieveResultFromCloud(sieveId: string, userId?: string): Promise<boolean> {
+  if (!sieveId) return false;
+  markSieveAsDeleted(sieveId);
+  if (!db) return true;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return true;
+
+  try {
+    await Promise.allSettled([
+      deleteDoc(doc(db, 'users', uid, THEOLOGICAL_SIEVE_COLLECTION, sieveId)),
+      setDoc(doc(db, 'users', uid, TOMBSTONES_COLLECTION, `sieve_${sieveId}`), {
+        id: sieveId,
+        entityType: 'sieve',
+        deletedAt: Date.now()
+      })
+    ]);
+    setLastFirestoreError(null);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function syncAllLocalSieveToCloud(entries: TheologicalSieveResult[], userId?: string): Promise<number> {
+  if (!db || !entries || entries.length === 0) return 0;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return 0;
+
+  try {
+    const [snap, tombSnap] = await Promise.all([
+      getDocs(collection(db, 'users', uid, THEOLOGICAL_SIEVE_COLLECTION)),
+      getDocs(collection(db, 'users', uid, TOMBSTONES_COLLECTION))
+    ]);
+
+    const deletedIds = getDeletedSieveIds();
+    tombSnap.forEach(d => {
+      const data = d.data() as { id?: string; entityType?: string };
+      if (d.id.startsWith('sieve_') || data?.entityType === 'sieve') {
+        deletedIds.add(data?.id || d.id.replace(/^sieve_/, ''));
+      }
+    });
+
+    const cloudIds = new Set<string>();
+    snap.forEach(d => cloudIds.add(d.id));
+
+    const toUpload = entries.filter(e => e && e.id && !cloudIds.has(e.id) && !deletedIds.has(e.id));
+    if (toUpload.length === 0) return 0;
+
+    const batch = writeBatch(db);
+    for (const item of toUpload) {
+      batch.set(
+        doc(db, 'users', uid, THEOLOGICAL_SIEVE_COLLECTION, item.id),
+        cleanUndefinedRecursively({ ...item, userId: uid, updatedAt: item.createdAt || Date.now() }),
+        { merge: true }
+      );
+    }
+    await batch.commit();
+    return toUpload.length;
+  } catch {
+    return 0;
+  }
+}
+
+export function subscribeToTheologicalSieve(
+  userId: string | undefined,
+  onUpdate: (entries: TheologicalSieveResult[], deletedIds: Set<string>) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe | null {
+  if (!db) return null;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return null;
+
+  try {
+    const cloudMap = new Map<string, TheologicalSieveResult>();
+    const tombstones = new Set<string>(getDeletedSieveIds());
+
+    const emit = () => {
+      const list = Array.from(cloudMap.values()).filter(item => item.id && !tombstones.has(item.id));
+      list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      onUpdate(list, new Set(tombstones));
+    };
+
+    const unsubTomb = onSnapshot(
+      collection(db, 'users', uid, TOMBSTONES_COLLECTION),
+      (snap) => {
+        const localDeleted = getDeletedSieveIds();
+        tombstones.clear();
+        localDeleted.forEach(id => tombstones.add(id));
+        snap.forEach(d => {
+          const data = d.data() as { id?: string; entityType?: string };
+          if (d.id.startsWith('sieve_') || data?.entityType === 'sieve') {
+            tombstones.add(data?.id || d.id.replace(/^sieve_/, ''));
+          }
+        });
+        try {
+          localStorage.setItem(LOCAL_STORAGE_DELETED_SIEVE_KEY, JSON.stringify(Array.from(tombstones)));
+        } catch {}
+        emit();
+      },
+      (err) => {
+        console.warn('[Firestore Sieve Tombstones Listener]:', err);
+      }
+    );
+
+    const unsubSieve = onSnapshot(
+      collection(db, 'users', uid, THEOLOGICAL_SIEVE_COLLECTION),
+      (snap) => {
+        cloudMap.clear();
+        snap.forEach(d => {
+          const data = d.data() as TheologicalSieveResult;
+          if (data && data.sermonTitle && !tombstones.has(d.id)) {
+            cloudMap.set(d.id, { ...data, id: data.id || d.id });
+          }
+        });
+        emit();
+      },
+      (err) => {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        setLastFirestoreError(errMsg);
+        if (onError) onError(err);
+      }
+    );
+
+    return () => {
+      try { unsubTomb(); unsubSieve(); } catch {}
+    };
+  } catch (err) {
+    if (onError) onError(err);
+    return null;
   }
 }

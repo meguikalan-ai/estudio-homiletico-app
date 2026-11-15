@@ -97,6 +97,19 @@ export default function App() {
   const [isTestingProbe, setIsTestingProbe] = useState<boolean>(false);
   const [cloudWriteError, setCloudWriteError] = useState<FirestoreErrorInfo | null>(null);
   const isRemoteSyncUpdateRef = useRef<boolean>(false);
+  const syncedSermonTimestampsRef = useRef<Map<string, number>>(new Map());
+
+  const recordRemoteSyncedTimestamps = (list: Sermon[]) => {
+    list.forEach(s => {
+      if (s && s.id) {
+        const ts = s.updatedAt || new Date(s.date).getTime() || 0;
+        const prev = syncedSermonTimestampsRef.current.get(s.id) || 0;
+        if (ts > prev) {
+          syncedSermonTimestampsRef.current.set(s.id, ts);
+        }
+      }
+    });
+  };
 
   // Ouvinte ativo para erros de gravação com o Firestore - Garante que erros NUNCA sejam escondidos
   useEffect(() => {
@@ -129,6 +142,7 @@ export default function App() {
       (cloudSermons) => {
         if (!isMounted) return;
         setLastSyncTime(new Date());
+        recordRemoteSyncedTimestamps(cloudSermons);
 
         // Smart Merge: reconcilia o que veio da nuvem com o estado local preservando o trabalho mais recente
         setSermons((prevLocal) => {
@@ -162,24 +176,25 @@ export default function App() {
       setGeneratedSeries(cloudSeriesList[0]);
     }, FIXED_PASTORAL_UID);
 
-    // Em segundo plano e sem bloquear a interface, executa a mesclagem inicial e telemetria
+    // Em segundo plano e sem bloquear a interface, executa a mesclagem inicial e telemetria real
     (async () => {
       try {
         const initialSync = await performInitialSermonSmartSync(sermons, FIXED_PASTORAL_UID);
         if (isMounted && initialSync.hasRemoteChanges) {
+          recordRemoteSyncedTimestamps(initialSync.mergedSermons);
           isRemoteSyncUpdateRef.current = true;
           setSermons(initialSync.mergedSermons);
         }
+        const realProbe = await testFirestoreConnection(FIXED_PASTORAL_UID);
         if (isMounted) {
           setFirestoreProbe({
-            connected: true,
-            latencyMs: 95,
-            cloudSermonCount: initialSync.mergedSermons.length,
-            databaseId: firestoreDatabaseId,
-            projectId: firebaseProjectId,
-            uid: FIXED_PASTORAL_UID,
-            userEmail: "meguikalan@gmail.com"
+            ...realProbe,
+            error: initialSync.error || realProbe.error
           });
+          if (initialSync.error || realProbe.error) {
+            setCloudSyncStatus('error');
+            setCloudSyncMessage(initialSync.error || realProbe.error || 'Erro de sincronização');
+          }
         }
       } catch (err) {
         console.warn("Aviso na sincronização inicial com nuvem:", err);
@@ -238,10 +253,15 @@ export default function App() {
       // 2. Envia e busca em paralelo em alta velocidade
       const result = await syncAllLocalSermonsToCloud(localList, FIXED_PASTORAL_UID);
 
-      // 3. Atualiza acervo local imediatamente com os sermões consolidados
-      if (result.cloudSermons && result.cloudSermons.length > 0) {
+      // 3. Atualiza acervo local imediatamente com os sermões consolidados (incluindo exclusões remotas)
+      if (!result.error) {
+        const remoteList = result.cloudSermons || [];
+        recordRemoteSyncedTimestamps(remoteList);
         setSermons((prevLocal) => {
-          const merged = smartMergeSermons(prevLocal, result.cloudSermons);
+          const merged = smartMergeSermons(prevLocal, remoteList);
+          if (areSermonListsEqual(prevLocal, merged)) {
+            return prevLocal;
+          }
           isRemoteSyncUpdateRef.current = true;
           try {
             localStorage.setItem('pastoral_sermons', JSON.stringify(merged));
@@ -486,25 +506,12 @@ export default function App() {
   });
   const [selectedSermonId, setSelectedSermonId] = useState<string>('');
 
-  // Auto-sync contínuo em background:
-  // Sempre que a lista de sermões for alterada localmente, sincroniza com users/{uid}/sermons
+  // Persistência imediata no localStorage quando sermons mudam (sem duplicar efeito de upload)
   useEffect(() => {
-    if (isRemoteSyncUpdateRef.current) {
-      isRemoteSyncUpdateRef.current = false;
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      syncAllLocalSermonsToCloud(sermons, FIXED_PASTORAL_UID).then(res => {
-        if (res.syncedCount > 0) {
-          setCloudSyncStatus('synced');
-          setCloudSyncMessage(`Sincronizado na nuvem (${res.syncedCount} atualizado(s))`);
-          setLastSyncTime(new Date());
-        }
-      }).catch(console.warn);
-    }, 800);
-
-    return () => clearTimeout(timer);
+    const nonBlankSermons = sermons.filter(s => !isSermonBlank(s) && !isModelSermon(s));
+    try {
+      localStorage.setItem('pastoral_sermons', JSON.stringify(nonBlankSermons));
+    } catch {}
   }, [sermons]);
   
   // Create / Generator inputs
@@ -831,33 +838,46 @@ export default function App() {
     setSelectedSermonId('');
   }, []);
 
-  // Auto save when sermons change (localStorage + Cloud Firestore mirroring)
+  // Auto save dirty sermons to Cloud Firestore without echoing remote snapshot updates
   useEffect(() => {
-    const nonBlankSermons = sermons.filter(s => !isSermonBlank(s));
-    localStorage.setItem('pastoral_sermons', JSON.stringify(nonBlankSermons));
+    const nonBlankSermons = sermons.filter(s => !isSermonBlank(s) && !isModelSermon(s));
+    try {
+      localStorage.setItem('pastoral_sermons', JSON.stringify(nonBlankSermons));
+    } catch {}
 
-    // If this update was triggered by an incoming remote sync, skip auto-uploading back to prevent infinite loops
     if (isRemoteSyncUpdateRef.current) {
       isRemoteSyncUpdateRef.current = false;
       return;
     }
 
-    // Debounced sync to Firestore for active sermon
-    if (activeSermon && !isSermonBlank(activeSermon)) {
-      const timer = setTimeout(async () => {
-        try {
-          await saveSermonToCloud(activeSermon, FIXED_PASTORAL_UID);
-          setCloudSyncStatus('synced');
-          setCloudSyncMessage('Espelhado em tempo real');
-        } catch (err) {
-          console.error("Erro ao espelhar com Firestore:", err);
-        } finally {
-          setIsCloudSyncing(false);
+    const dirtySermons = nonBlankSermons.filter(s => {
+      const localTs = s.updatedAt || new Date(s.date).getTime() || 0;
+      const syncedTs = syncedSermonTimestampsRef.current.get(s.id) || 0;
+      return localTs > syncedTs;
+    });
+
+    if (dirtySermons.length === 0) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        for (const dirty of dirtySermons) {
+          const ok = await saveSermonToCloud(dirty, FIXED_PASTORAL_UID);
+          if (ok) {
+            const ts = dirty.updatedAt || new Date(dirty.date).getTime() || Date.now();
+            syncedSermonTimestampsRef.current.set(dirty.id, ts);
+          }
         }
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [sermons, activeSermon]);
+        setCloudSyncStatus('synced');
+        setCloudSyncMessage('Espelhado em tempo real');
+        setLastSyncTime(new Date());
+      } catch (err) {
+        console.error("Erro ao espelhar com Firestore:", err);
+      } finally {
+        setIsCloudSyncing(false);
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [sermons]);
 
   // Auto-reconcile and Smart Merge when opening the Library tab or switching tabs
   useEffect(() => {

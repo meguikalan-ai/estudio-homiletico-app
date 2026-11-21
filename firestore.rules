@@ -20,6 +20,26 @@ service cloud.firestore {
         && (!('lastMessagePreview' in data) || (data.lastMessagePreview is string && data.lastMessagePreview.size() <= 240));
     }
 
+    function isValidBiblicalTheme(data, uid, themeId) {
+      return data.keys().hasAll(['id', 'title', 'scripture', 'approach', 'category', 'summary', 'application', 'isGenerated', 'createdAt', 'sourceMode'])
+        && data.keys().hasOnly(['id', 'userId', 'title', 'scripture', 'approach', 'category', 'summary', 'application', 'outlineHints', 'isGenerated', 'createdAt', 'updatedAt', 'sourceMode', 'sourceInput', 'isSaved'])
+        && data.id is string && data.id == themeId && data.id.size() <= 128
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.scripture is string && data.scripture.size() >= 1 && data.scripture.size() <= 140
+        && data.approach in ['Expositivo', 'Temático', 'Pastoral', 'Devocional']
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
+        && data.summary is string && data.summary.size() >= 1 && data.summary.size() <= 800
+        && data.application is string && data.application.size() >= 1 && data.application.size() <= 800
+        && data.isGenerated is bool
+        && data.createdAt is number
+        && data.sourceMode in ['scripture', 'category', 'topic']
+        && (!('userId' in data) || (data.userId is string && data.userId == uid))
+        && (!('updatedAt' in data) || data.updatedAt is number)
+        && (!('isSaved' in data) || data.isSaved is bool)
+        && (!('sourceInput' in data) || (data.sourceInput is string && data.sourceInput.size() <= 200))
+        && (!('outlineHints' in data) || (data.outlineHints is list && data.outlineHints.size() <= 8 && (data.outlineHints.size() == 0 || data.outlineHints[0] is string)));
+    }
+
     // Acesso para o UID fixo pastoral (sem necessidade de login) ou via autenticação
     match /users/{uid} {
       allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
@@ -53,6 +73,13 @@ service cloud.firestore {
 
       match /theological_sieve/{sieveId} {
         allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
+      }
+
+      match /biblical_themes/{themeId} {
+        allow get, list, delete: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
+        allow create, update: if (uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid))
+          && isValidId(themeId)
+          && isValidBiblicalTheme(request.resource.data, uid, themeId);
       }
 
       match /chat_meta/{metaId} {

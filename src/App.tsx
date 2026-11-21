@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
   BookOpen, Sparkles, Clock, Settings, Download, Printer, Search, 
   Bookmark, Archive, Trash2, Plus, Play, Pause, Maximize2, Minimize2, 
@@ -31,11 +31,13 @@ import {
   Sermon, SermonEvaluation, ExpositorySeries, ExpositorySeriesUnit, 
   ThemeSuggestion, CalendarCelebration, CompareVersionText, ExegesisResponse, 
   IllustrationSuggestion, SermonHistoryEntry, PericopeAnalysis, PericopePossibility,
-  VisualIllustration, HinarioType, DetailedHymn
+  VisualIllustration, HinarioType, DetailedHymn, GeneratedHomileticTheme
 } from './types';
 import { TheologicalChat } from './components/TheologicalChat';
 import { SermonLibraryCard } from './components/SermonLibraryModal';
+import { ThemeGeneratorPanel } from './components/ThemeGeneratorPanel';
 import { BIBLICAL_THEMES_BANK, CHRISTIAN_THEMATIC_CALENDAR, MOCK_STARTER_SERMONS } from './data/pastoralBank';
+import { normalizeCategoryKey, normalizeThemeCategory } from './utils/themeCategory';
 import { 
   saveSermonToCloud, 
   deleteSermonFromCloud, 
@@ -64,7 +66,14 @@ import {
   getLastFirestoreError,
   FIXED_PASTORAL_UID,
   onFirestoreError,
-  FirestoreErrorInfo
+  FirestoreErrorInfo,
+  LOCAL_STORAGE_SAVED_THEMES_KEY,
+  getDeletedThemeIds,
+  markThemeAsDeleted,
+  saveGeneratedThemeToCloud,
+  deleteGeneratedThemeFromCloud,
+  syncAllLocalThemesToCloud,
+  subscribeToSavedThemes
 } from './services/sermonStorage';
 import { 
   createSyncCode, 
@@ -126,6 +135,7 @@ export default function App() {
     let isMounted = true;
     let unsubscribeSermons: (() => void) | null = null;
     let unsubscribeSeries: (() => void) | null = null;
+    let unsubscribeThemes: (() => void) | null = null;
 
     // Observar logs internos de sincronização
     const unsubLogs = subscribeToSyncLogs((logs) => {
@@ -176,6 +186,37 @@ export default function App() {
       setGeneratedSeries(cloudSeriesList[0]);
     }, FIXED_PASTORAL_UID);
 
+    unsubscribeThemes = subscribeToSavedThemes(
+      FIXED_PASTORAL_UID,
+      (cloudThemes, deletedThemeIds) => {
+        if (!isMounted) return;
+        setSavedThemes((prevLocal) => {
+          const mergedMap = new Map<string, GeneratedHomileticTheme>();
+          prevLocal.forEach((t) => {
+            if (t && t.id && !deletedThemeIds.has(t.id)) {
+              mergedMap.set(t.id, t);
+            }
+          });
+          cloudThemes.forEach((ct) => {
+            if (!ct || !ct.id || deletedThemeIds.has(ct.id)) return;
+            const existing = mergedMap.get(ct.id);
+            const existingTs = existing ? existing.updatedAt || existing.createdAt || 0 : -1;
+            const cloudTs = ct.updatedAt || ct.createdAt || 0;
+            if (!existing || cloudTs >= existingTs) {
+              mergedMap.set(ct.id, { ...ct, isSaved: true });
+            }
+          });
+          const merged = Array.from(mergedMap.values()).sort(
+            (a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)
+          );
+          try {
+            localStorage.setItem(LOCAL_STORAGE_SAVED_THEMES_KEY, JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+      }
+    );
+
     // Em segundo plano e sem bloquear a interface, executa a mesclagem inicial e telemetria real
     (async () => {
       try {
@@ -185,6 +226,7 @@ export default function App() {
           isRemoteSyncUpdateRef.current = true;
           setSermons(initialSync.mergedSermons);
         }
+        await syncAllLocalThemesToCloud(savedThemes, FIXED_PASTORAL_UID);
         const realProbe = await testFirestoreConnection(FIXED_PASTORAL_UID);
         if (isMounted) {
           setFirestoreProbe({
@@ -228,6 +270,9 @@ export default function App() {
       if (unsubscribeSeries) {
         try { unsubscribeSeries(); } catch {}
       }
+      if (unsubscribeThemes) {
+        try { unsubscribeThemes(); } catch {}
+      }
     };
   }, []);
 
@@ -270,12 +315,13 @@ export default function App() {
         });
       }
 
-      // 4. Busca séries expositivas em segundo plano sem bloquear
+      // 4. Busca séries expositivas e sincroniza temas gerados salvos em segundo plano sem bloquear
       fetchUserSeriesFromCloud(FIXED_PASTORAL_UID).then(cloudSeries => {
         if (cloudSeries.length > 0 && !generatedSeries) {
           setGeneratedSeries(cloudSeries[0]);
         }
       }).catch(console.warn);
+      syncAllLocalThemesToCloud(savedThemes, FIXED_PASTORAL_UID).catch(console.warn);
 
       // 5. Atualiza probe de telemetria sem fazer nova requisição redundante
       setFirestoreProbe({
@@ -513,6 +559,27 @@ export default function App() {
       localStorage.setItem('pastoral_sermons', JSON.stringify(nonBlankSermons));
     } catch {}
   }, [sermons]);
+
+  // Temas Homiléticos Gerados e Salvos no Banco de Temas Bíblicos
+  const [savedThemes, setSavedThemes] = useState<GeneratedHomileticTheme[]>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_SAVED_THEMES_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      const deleted = getDeletedThemeIds();
+      return parsed.filter((t: GeneratedHomileticTheme) => t && t.id && t.title && !deleted.has(t.id));
+    } catch {
+      return [];
+    }
+  });
+  const [themeIdDeleting, setThemeIdDeleting] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_SAVED_THEMES_KEY, JSON.stringify(savedThemes));
+    } catch {}
+  }, [savedThemes]);
   
   // Create / Generator inputs
   const [titleInput, setTitleInput] = useState('');
@@ -1557,6 +1624,118 @@ export default function App() {
     setScriptureInput(theme.scripture);
     setThemeInput(theme.coreIdea);
     setActiveTab('workspace');
+  };
+
+  const themeCategories = useMemo(() => {
+    const categoryMap = new Map<string, string>();
+    Object.keys(BIBLICAL_THEMES_BANK).forEach((cat) => {
+      categoryMap.set(normalizeCategoryKey(cat), cat);
+    });
+    savedThemes.forEach((item) => {
+      const formatted = normalizeThemeCategory(item.category, '');
+      const key = normalizeCategoryKey(formatted);
+      if (key && !categoryMap.has(key)) {
+        categoryMap.set(key, formatted);
+      }
+    });
+    return Array.from(categoryMap.values());
+  }, [savedThemes]);
+
+  const handleSaveGeneratedTheme = async (theme: GeneratedHomileticTheme): Promise<boolean> => {
+    const cleanedCategory = normalizeThemeCategory(theme.category, '');
+    if (!cleanedCategory) {
+      return false;
+    }
+
+    const normalizedTitle = (theme.title || '').trim().toLowerCase();
+    const normalizedScripture = (theme.scripture || '').trim().toLowerCase();
+    const isDuplicate = savedThemes.some(
+      (existing) =>
+        existing.id === theme.id ||
+        ((existing.title || '').trim().toLowerCase() === normalizedTitle &&
+          (existing.scripture || '').trim().toLowerCase() === normalizedScripture)
+    );
+    if (isDuplicate) {
+      return true;
+    }
+
+    const themeToSave: GeneratedHomileticTheme = {
+      ...theme,
+      id: theme.id || `theme_${Date.now()}`,
+      category: cleanedCategory,
+      isGenerated: true,
+      isSaved: true,
+      updatedAt: Date.now()
+    };
+
+    setSavedThemes((prev) => [themeToSave, ...prev]);
+    const ok = await saveGeneratedThemeToCloud(themeToSave, FIXED_PASTORAL_UID);
+
+    const noticeText = `Tema "${themeToSave.title}" salvo no Banco de Temas Bíblicos.`;
+    setToastNotice(noticeText);
+    setTimeout(() => {
+      setToastNotice((prev) => (prev === noticeText ? null : prev));
+    }, 3500);
+
+    return ok;
+  };
+
+  const handleDeleteSavedTheme = (themeId: string) => {
+    if (!themeId) return;
+    const deletedTarget = savedThemes.find((item) => item.id === themeId);
+    const remainingThemes = savedThemes.filter((item) => item.id !== themeId);
+
+    markThemeAsDeleted(themeId);
+    setThemeIdDeleting(null);
+    setSavedThemes(remainingThemes);
+
+    if (deletedTarget && categoryFilter !== 'todos') {
+      const targetKey = normalizeCategoryKey(deletedTarget.category);
+      const activeKey = normalizeCategoryKey(categoryFilter);
+      const isDefaultBankCat = Object.keys(BIBLICAL_THEMES_BANK).some(
+        (cat) => normalizeCategoryKey(cat) === targetKey
+      );
+      const hasOtherInSameCat = remainingThemes.some(
+        (item) => normalizeCategoryKey(item.category) === targetKey
+      );
+      if (activeKey === targetKey && !isDefaultBankCat && !hasOtherInSameCat) {
+        setCategoryFilter('todos');
+      }
+    }
+
+    deleteGeneratedThemeFromCloud(themeId, FIXED_PASTORAL_UID).catch((err) => {
+      console.warn('[Themes Cloud Delete] Aviso ao excluir tema no Firestore:', err);
+    });
+  };
+
+  const useGeneratedThemeInWorkspace = (theme: GeneratedHomileticTheme) => {
+    setTitleInput(theme.title);
+    setScriptureInput(theme.scripture);
+    setThemeInput(`${theme.summary}\n\nAplicação Pastoral: ${theme.application}`);
+
+    if (theme.outlineHints && theme.outlineHints.length > 0) {
+      const hintBlock = `[Tema do Banco — ${theme.approach} | ${theme.category}]\nTítulo: ${theme.title}\nTexto Bíblico: ${theme.scripture}\nSugestão de divisões:\n${theme.outlineHints.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
+      setTheologicalNotes((prev) => {
+        if (!prev.trim()) return hintBlock;
+        if (prev.includes(theme.title)) return prev;
+        return `${prev}\n\n${hintBlock}`;
+      });
+    }
+
+    setActiveTab('workspace');
+    setTimeout(() => {
+      if (laboratoryTopRef.current) {
+        laboratoryTopRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }, 100);
+
+    const noticeText = `Tema "${theme.title}" carregado na Oficina de Sermões.`;
+    setToastNotice(noticeText);
+    setTimeout(() => {
+      setToastNotice((prev) => (prev === noticeText ? null : prev));
+    }, 3500);
   };
 
   const useCalendarTheme = (cal: CalendarCelebration) => {
@@ -3851,24 +4030,119 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
 
               {/* Grid Categories Themes */}
               <div className="bg-white p-6 rounded-xl border border-[#E6E2DA] shadow-sm space-y-6">
+                <ThemeGeneratorPanel
+                  categories={themeCategories}
+                  savedThemes={savedThemes}
+                  onSaveTheme={handleSaveGeneratedTheme}
+                  onUseTheme={useGeneratedThemeInWorkspace}
+                />
+
                 <div>
                   <h3 className="font-serif italic text-lg font-bold">Banco de Temas Bíblicos Homiléticos</h3>
                   <div className="flex flex-wrap gap-1.5 mt-3">
-                    {['todos', ...Object.keys(BIBLICAL_THEMES_BANK)].map(cat => (
-                      <button
-                        key={cat}
-                        onClick={() => setCategoryFilter(cat)}
-                        className={`text-xs px-3 py-1.5 rounded-full capitalize transition-all border font-semibold ${categoryFilter === cat ? 'bg-[#5A5A40] text-white border-[#5A5A40]' : 'bg-white text-[#2D2926] hover:bg-gray-50 border-[#E6E2DA]'}`}
-                      >
-                        {cat}
-                      </button>
-                    ))}
+                    {['todos', ...themeCategories].map(cat => {
+                      const isActive =
+                        cat === 'todos'
+                          ? categoryFilter === 'todos'
+                          : normalizeCategoryKey(categoryFilter) === normalizeCategoryKey(cat);
+                      const displayLabel =
+                        cat === 'todos'
+                          ? 'Todos'
+                          : cat === cat.toLowerCase()
+                          ? cat.charAt(0).toUpperCase() + cat.slice(1)
+                          : cat;
+                      return (
+                        <button
+                          key={cat === 'todos' ? 'todos' : normalizeCategoryKey(cat)}
+                          onClick={() => setCategoryFilter(cat)}
+                          className={`text-xs px-3 py-1.5 rounded-full transition-all border font-semibold ${isActive ? 'bg-[#5A5A40] text-white border-[#5A5A40]' : 'bg-white text-[#2D2926] hover:bg-gray-50 border-[#E6E2DA]'}`}
+                        >
+                          {displayLabel}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {savedThemes
+                    .filter((item) => categoryFilter === 'todos' || normalizeCategoryKey(categoryFilter) === normalizeCategoryKey(item.category))
+                    .map((item) => (
+                      <div key={item.id} className="bg-[#FAF8F4] border border-[#D8D2C5] rounded-xl p-5 space-y-4 flex flex-col justify-between hover:shadow-md transition-all">
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-start gap-2">
+                            <span className="text-[11px] font-semibold text-[#5A5A40]">
+                              {item.approach} · {item.category === item.category.toLowerCase() ? item.category.charAt(0).toUpperCase() + item.category.slice(1) : item.category} · Salvo
+                            </span>
+                            <span className="text-xs font-mono font-medium text-gray-500 text-right shrink-0">{item.scripture}</span>
+                          </div>
+                          <h4 className="font-serif font-bold text-[#2D2926] text-base leading-tight">{item.title}</h4>
+                          <p className="text-xs text-gray-600 leading-snug">{item.summary}</p>
+                          {item.outlineHints && item.outlineHints.length > 0 && (
+                            <div className="pt-2 border-t border-black/5 space-y-1">
+                              <span className="block text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                                Sugestão de Divisões
+                              </span>
+                              <ul className="space-y-0.5 text-[11px] text-gray-600">
+                                {item.outlineHints.map((hint, hIdx) => (
+                                  <li key={hIdx} className="leading-snug">
+                                    {hIdx + 1}. {hint}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          <div className="pt-2 border-t border-black/5 text-[10px] text-gray-500 italic">
+                            <strong>Aplicação:</strong> {item.application}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 pt-1">
+                          <button
+                            onClick={() => useGeneratedThemeInWorkspace(item)}
+                            className="w-full bg-white hover:bg-[#5A5A40] text-[#2D2926] hover:text-white border border-[#E6E2DA] py-2 rounded text-xs font-bold tracking-wide transition-all"
+                          >
+                            Usar Tema de Estudo
+                          </button>
+
+                          {themeIdDeleting === item.id ? (
+                            <div className="flex items-center justify-between gap-2 bg-red-50 border border-red-200 rounded px-2.5 py-1.5 text-[11px]">
+                              <span className="text-red-800 font-medium">Excluir tema salvo?</span>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSavedTheme(item.id)}
+                                  className="px-2 py-0.5 rounded bg-red-700 text-white font-semibold hover:bg-red-800 transition-colors"
+                                >
+                                  Confirmar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setThemeIdDeleting(null)}
+                                  className="px-2 py-0.5 rounded border border-red-200 bg-white text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                                >
+                                  Cancelar
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => setThemeIdDeleting(item.id)}
+                                className="inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-red-700 transition-colors"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Remover do banco</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+
                   {Object.entries(BIBLICAL_THEMES_BANK)
-                    .filter(([cat]) => categoryFilter === 'todos' || categoryFilter === cat)
+                    .filter(([cat]) => categoryFilter === 'todos' || normalizeCategoryKey(categoryFilter) === normalizeCategoryKey(cat))
                     .flatMap(([, items]) => items)
                     .map((item, idx) => (
                       <div key={idx} className="bg-[#F5F2ED]/60 border border-[#E6E2DA] rounded-xl p-5 space-y-4 flex flex-col justify-between hover:shadow-md transition-all">

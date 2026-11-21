@@ -245,4 +245,34 @@ export interface TheologicalSieveResult {
   };
 }
 
+export type ThemeGenerationMode = 'scripture' | 'category' | 'topic';
+export type ThemeApproach = 'Expositivo' | 'Temático' | 'Pastoral' | 'Devocional';
+
+export interface GeneratedHomileticTheme {
+  id: string;
+  userId?: string;
+  title: string;
+  scripture: string;
+  approach: ThemeApproach;
+  category: string;
+  summary: string;
+  application: string;
+  outlineHints?: string[];
+  isGenerated: boolean;
+  createdAt: number;
+  updatedAt?: number;
+  sourceMode: ThemeGenerationMode;
+  sourceInput?: string;
+  isSaved?: boolean;
+}
+
+export interface GenerateThemesRequest {
+  mode: ThemeGenerationMode;
+  inputValue?: string;
+  category?: string;
+  customCategory?: string;
+  approach?: ThemeApproach;
+  variationSeed?: string;
+  existingTitles?: string[];
+}
 

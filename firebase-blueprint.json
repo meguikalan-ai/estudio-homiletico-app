@@ -105,6 +105,32 @@
         "createdAt": { "type": "number" }
       },
       "required": ["id", "title"]
+    },
+    "GeneratedHomileticTheme": {
+      "title": "GeneratedHomileticTheme",
+      "description": "Homiletic theme generated and saved by the user in the Biblical Themes Bank.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "scripture": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "approach": { "type": "string", "maxLength": 40 },
+        "category": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 800 },
+        "application": { "type": "string", "minLength": 1, "maxLength": 800 },
+        "outlineHints": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "isGenerated": { "type": "boolean" },
+        "isSaved": { "type": "boolean" },
+        "sourceMode": { "type": "string", "maxLength": 24 },
+        "sourceInput": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "title", "scripture", "approach", "category", "summary", "application", "isGenerated", "createdAt", "sourceMode"]
     }
   },
   "firestore": {
@@ -135,6 +161,10 @@
     "/users/{uid}/theological_sieve/{sieveId}": {
       "schema": "TheologicalSieveEntry",
       "description": "User-scoped Crivo Teologico history synchronized across devices."
+    },
+    "/users/{uid}/biblical_themes/{themeId}": {
+      "schema": "GeneratedHomileticTheme",
+      "description": "User-scoped generated and saved biblical homiletic themes synchronized across devices."
     },
     "/users/{uid}/tombstones/{tombstoneId}": {
       "schema": "Tombstone",

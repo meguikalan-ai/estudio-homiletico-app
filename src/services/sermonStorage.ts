@@ -20,7 +20,8 @@ import {
   type DocumentData,
   type QuerySnapshot
 } from '../firebase';
-import { Sermon, ExpositorySeries, VisualIllustration, TheologicalChatMessage, TheologicalChatTopic, TheologicalSieveResult } from '../types';
+import { Sermon, ExpositorySeries, VisualIllustration, TheologicalChatMessage, TheologicalChatTopic, TheologicalSieveResult, GeneratedHomileticTheme, ThemeApproach, ThemeGenerationMode } from '../types';
+import { normalizeThemeCategory } from '../utils/themeCategory';
 
 export const PASTORAL_SERMONS_COLLECTION = 'pastoral_sermons';
 export const SERMONS_COLLECTION = 'sermons';
@@ -30,6 +31,7 @@ export const ILLUSTRATIONS_COLLECTION = 'illustrations';
 export const THEOLOGICAL_TOPICS_COLLECTION = 'theological_topics';
 export const THEOLOGICAL_CHAT_COLLECTION = 'theological_chat';
 export const THEOLOGICAL_SIEVE_COLLECTION = 'theological_sieve';
+export const BIBLICAL_THEMES_COLLECTION = 'biblical_themes';
 export const CHAT_META_COLLECTION = 'chat_meta';
 export const LOCAL_STORAGE_KEY = 'pastoral_sermons';
 export const LOCAL_STORAGE_DELETED_KEY = 'pastoral_deleted_sermon_ids';
@@ -40,6 +42,8 @@ export const LOCAL_STORAGE_CHAT_TOPICS_KEY = 'pastoral_theological_chat_topics';
 export const LOCAL_STORAGE_DELETED_TOPICS_KEY = 'pastoral_deleted_topic_ids';
 export const LOCAL_STORAGE_SIEVE_KEY = 'theological_sieve_history';
 export const LOCAL_STORAGE_DELETED_SIEVE_KEY = 'pastoral_deleted_sieve_ids';
+export const LOCAL_STORAGE_SAVED_THEMES_KEY = 'pastoral_saved_biblical_themes';
+export const LOCAL_STORAGE_DELETED_THEMES_KEY = 'pastoral_deleted_theme_ids';
 export const LEGACY_CHAT_TOPIC_ID = 'topic-geral';
 
 // Rastreamento do último erro do Firestore para diagnósticos na UI
@@ -856,7 +860,7 @@ export function subscribeToUserSermons(
     const legacySermonsMap = new Map<string, Sermon>();
 
     const isTombstoned = (id: string, sermon?: Sermon): boolean => {
-      if (id.startsWith('ill_') || id.startsWith('sieve_') || id.startsWith('topic_')) return true;
+      if (id.startsWith('ill_') || id.startsWith('sieve_') || id.startsWith('topic_') || id.startsWith('theme_')) return true;
       const deletedAt = cloudTombstones.get(id);
       if (deletedAt === undefined) return false;
       if (!sermon) return true;
@@ -934,9 +938,11 @@ export function subscribeToUserSermons(
             docSnap.id.startsWith('ill_') ||
             docSnap.id.startsWith('sieve_') ||
             docSnap.id.startsWith('topic_') ||
+            docSnap.id.startsWith('theme_') ||
             data?.entityType === 'illustration' ||
             data?.entityType === 'sieve' ||
-            data?.entityType === 'topic'
+            data?.entityType === 'topic' ||
+            data?.entityType === 'theme'
           ) {
             return;
           }
@@ -2197,3 +2203,263 @@ export function subscribeToTheologicalSieve(
     return null;
   }
 }
+
+// ==================== BANCO DE TEMAS BÍBLICOS GERADOS (REAL-TIME SYNC + TOMBSTONES) ====================
+
+export function getDeletedThemeIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_DELETED_THEMES_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function markThemeAsDeleted(themeId: string): void {
+  if (!themeId) return;
+  try {
+    const set = getDeletedThemeIds();
+    set.add(themeId);
+    localStorage.setItem(LOCAL_STORAGE_DELETED_THEMES_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
+export function unmarkThemeAsDeleted(themeId: string): void {
+  if (!themeId) return;
+  try {
+    const set = getDeletedThemeIds();
+    if (set.has(themeId)) {
+      set.delete(themeId);
+      localStorage.setItem(LOCAL_STORAGE_DELETED_THEMES_KEY, JSON.stringify(Array.from(set)));
+    }
+  } catch {}
+}
+
+const VALID_THEME_APPROACHES: ThemeApproach[] = ['Expositivo', 'Temático', 'Pastoral', 'Devocional'];
+const VALID_THEME_MODES: ThemeGenerationMode[] = ['scripture', 'category', 'topic'];
+
+function sanitizeGeneratedThemePayload(theme: GeneratedHomileticTheme, uid: string): GeneratedHomileticTheme {
+  const safeId = (theme.id || `theme_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const safeApproach: ThemeApproach = VALID_THEME_APPROACHES.includes(theme.approach)
+    ? theme.approach
+    : 'Expositivo';
+  const safeMode: ThemeGenerationMode = VALID_THEME_MODES.includes(theme.sourceMode)
+    ? theme.sourceMode
+    : 'topic';
+
+  const payload: GeneratedHomileticTheme = {
+    id: safeId,
+    userId: uid,
+    title: (theme.title || 'Tema Homilético').trim().slice(0, 200) || 'Tema Homilético',
+    scripture: (theme.scripture || 'Salmos 119:105').trim().slice(0, 140) || 'Salmos 119:105',
+    approach: safeApproach,
+    category: normalizeThemeCategory(theme.category, 'esperança'),
+    summary: (theme.summary || '').trim().slice(0, 800) || 'Exposição bíblica e edificação congregacional.',
+    application: (theme.application || '').trim().slice(0, 800) || 'Aplicar os princípios bíblicos no cotidiano da igreja.',
+    isGenerated: Boolean(theme.isGenerated ?? true),
+    isSaved: true,
+    sourceMode: safeMode,
+    createdAt: Number(theme.createdAt) || Date.now(),
+    updatedAt: Number(theme.updatedAt) || Date.now()
+  };
+
+  if (theme.sourceInput && theme.sourceInput.trim()) {
+    payload.sourceInput = theme.sourceInput.trim().slice(0, 200);
+  }
+  if (Array.isArray(theme.outlineHints) && theme.outlineHints.length > 0) {
+    const cleanedHints = theme.outlineHints
+      .filter((h): h is string => typeof h === 'string' && h.trim().length > 0)
+      .map(h => h.trim().slice(0, 240))
+      .slice(0, 8);
+    if (cleanedHints.length > 0) {
+      payload.outlineHints = cleanedHints;
+    }
+  }
+
+  return payload;
+}
+
+export async function saveGeneratedThemeToCloud(theme: GeneratedHomileticTheme, userId?: string): Promise<boolean> {
+  if (!db || !theme) return false;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return false;
+
+  const payload = sanitizeGeneratedThemePayload(theme, uid);
+  const targetPath = `users/${uid}/${BIBLICAL_THEMES_COLLECTION}/${payload.id}`;
+
+  try {
+    unmarkThemeAsDeleted(payload.id);
+    await setDoc(doc(db, 'users', uid, BIBLICAL_THEMES_COLLECTION, payload.id), payload, { merge: true });
+    try {
+      await deleteDoc(doc(db, 'users', uid, TOMBSTONES_COLLECTION, `theme_${payload.id}`));
+    } catch {}
+    setLastFirestoreError(null);
+    recordSyncLog('upload', `Tema bíblico salvo na nuvem: "${payload.title}"`, `ID: ${payload.id}`);
+    return true;
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    notifyFirestoreError({
+      code: (err as { code?: string })?.code || 'firestore/theme-save-error',
+      message: errMsg,
+      path: targetPath,
+      timestamp: Date.now()
+    });
+    recordSyncLog('error', `Falha ao salvar tema bíblico no Firestore: ${errMsg}`);
+    return false;
+  }
+}
+
+export async function deleteGeneratedThemeFromCloud(themeId: string, userId?: string): Promise<boolean> {
+  if (!themeId) return false;
+  markThemeAsDeleted(themeId);
+  if (!db) return true;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return true;
+
+  const targetPath = `users/${uid}/${BIBLICAL_THEMES_COLLECTION}/${themeId}`;
+  try {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'users', uid, BIBLICAL_THEMES_COLLECTION, themeId));
+    batch.set(doc(db, 'users', uid, TOMBSTONES_COLLECTION, `theme_${themeId}`), {
+      id: themeId,
+      entityType: 'theme',
+      deletedAt: Date.now()
+    });
+    await batch.commit();
+    setLastFirestoreError(null);
+    recordSyncLog('delete', `Tema bíblico removido de todos os dispositivos`, `ID: ${themeId}`);
+    return true;
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    notifyFirestoreError({
+      code: (err as { code?: string })?.code || 'firestore/theme-delete-error',
+      message: errMsg,
+      path: targetPath,
+      timestamp: Date.now()
+    });
+    return false;
+  }
+}
+
+export async function syncAllLocalThemesToCloud(themes: GeneratedHomileticTheme[], userId?: string): Promise<number> {
+  if (!db || !themes || themes.length === 0) return 0;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return 0;
+
+  try {
+    const [themesSnap, tombSnap] = await Promise.all([
+      getDocs(collection(db, 'users', uid, BIBLICAL_THEMES_COLLECTION)),
+      getDocs(collection(db, 'users', uid, TOMBSTONES_COLLECTION))
+    ]);
+
+    const deletedIds = getDeletedThemeIds();
+    tombSnap.forEach(d => {
+      const data = d.data() as { id?: string; entityType?: string };
+      if (d.id.startsWith('theme_') || data?.entityType === 'theme') {
+        deletedIds.add(data?.id || d.id.replace(/^theme_/, ''));
+      }
+    });
+
+    const cloudMap = new Map<string, number>();
+    themesSnap.forEach(d => {
+      const data = d.data() as GeneratedHomileticTheme;
+      cloudMap.set(d.id, Number(data?.updatedAt || data?.createdAt || 0));
+    });
+
+    const toUpload = themes.filter(t => {
+      if (!t || !t.id || deletedIds.has(t.id)) return false;
+      const cloudTs = cloudMap.get(t.id);
+      return cloudTs === undefined || (t.updatedAt || t.createdAt || 0) > cloudTs;
+    });
+    if (toUpload.length === 0) return 0;
+
+    const batch = writeBatch(db);
+    for (const theme of toUpload) {
+      const payload = sanitizeGeneratedThemePayload(theme, uid);
+      batch.set(doc(db, 'users', uid, BIBLICAL_THEMES_COLLECTION, payload.id), payload, { merge: true });
+    }
+    await batch.commit();
+    setLastFirestoreError(null);
+    return toUpload.length;
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    setLastFirestoreError(errMsg);
+    return 0;
+  }
+}
+
+export function subscribeToSavedThemes(
+  userId: string | undefined,
+  onUpdate: (themes: GeneratedHomileticTheme[], deletedThemeIds: Set<string>) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe | null {
+  if (!db) return null;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return null;
+
+  try {
+    const cloudMap = new Map<string, GeneratedHomileticTheme>();
+    const tombstones = new Set<string>(getDeletedThemeIds());
+
+    const emit = () => {
+      const list = Array.from(cloudMap.values()).filter(item => item.id && !tombstones.has(item.id));
+      list.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+      onUpdate(list, new Set(tombstones));
+    };
+
+    const unsubTomb = onSnapshot(
+      collection(db, 'users', uid, TOMBSTONES_COLLECTION),
+      (snap) => {
+        const localDeleted = getDeletedThemeIds();
+        tombstones.clear();
+        localDeleted.forEach(id => tombstones.add(id));
+        snap.forEach(d => {
+          const data = d.data() as { id?: string; entityType?: string };
+          if (d.id.startsWith('theme_') || data?.entityType === 'theme') {
+            tombstones.add(data?.id || d.id.replace(/^theme_/, ''));
+          }
+        });
+        try {
+          localStorage.setItem(LOCAL_STORAGE_DELETED_THEMES_KEY, JSON.stringify(Array.from(tombstones)));
+        } catch {}
+        emit();
+      },
+      (err) => {
+        console.warn('[Firestore Themes Tombstones Listener]:', err);
+      }
+    );
+
+    const unsubThemes = onSnapshot(
+      collection(db, 'users', uid, BIBLICAL_THEMES_COLLECTION),
+      (snap) => {
+        cloudMap.clear();
+        snap.forEach(d => {
+          const data = d.data() as GeneratedHomileticTheme;
+          if (data && data.title && !tombstones.has(d.id)) {
+            cloudMap.set(d.id, { ...data, id: data.id || d.id, isSaved: true });
+          }
+        });
+        setLastFirestoreError(null);
+        emit();
+      },
+      (err) => {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        notifyFirestoreError({
+          code: (err as { code?: string })?.code || 'firestore/themes-listener-error',
+          message: errMsg,
+          path: `users/${uid}/${BIBLICAL_THEMES_COLLECTION}`,
+          timestamp: Date.now()
+        });
+        if (onError) onError(err);
+      }
+    );
+
+    return () => {
+      try { unsubTomb(); unsubThemes(); } catch {}
+    };
+  } catch (err) {
+    if (onError) onError(err);
+    return null;
+  }
+}
+

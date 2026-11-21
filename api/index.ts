@@ -1956,6 +1956,326 @@ Retorne obrigatoriamente um objeto JSON com os mesmos campos do sermão, contend
   }
 });
 
+const BANK_CATEGORIES = [
+  "família",
+  "discipulado",
+  "oração",
+  "santidade",
+  "sofrimento",
+  "evangelismo",
+  "liderança",
+  "juventude",
+  "missões",
+  "esperança",
+  "avivamento",
+] as const;
+
+const BANK_CATEGORY_LOOKUP: Record<string, string> = {
+  familia: "família",
+  "família": "família",
+  discipulado: "discipulado",
+  oracao: "oração",
+  "oração": "oração",
+  santidade: "santidade",
+  sofrimento: "sofrimento",
+  evangelismo: "evangelismo",
+  lideranca: "liderança",
+  "liderança": "liderança",
+  juventude: "juventude",
+  missoes: "missões",
+  "missões": "missões",
+  esperanca: "esperança",
+  "esperança": "esperança",
+  avivamento: "avivamento",
+};
+
+const PT_LOWERCASE_CONNECTORS = new Set([
+  "a", "ao", "aos", "as", "com", "da", "das", "de", "do", "dos",
+  "e", "em", "na", "nas", "no", "nos", "o", "os", "para", "por", "sem", "sob"
+]);
+
+function formatCustomCategoryName(raw: string): string {
+  const collapsed = raw.trim().replace(/\s+/g, " ");
+  if (!collapsed) return "";
+  return collapsed
+    .split(" ")
+    .map((word, idx) => {
+      const lower = word.toLowerCase();
+      if (idx > 0 && PT_LOWERCASE_CONNECTORS.has(lower)) {
+        return lower;
+      }
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ")
+    .slice(0, 60);
+}
+
+function normalizeThemeCategory(
+  raw?: string,
+  allowCustom = false,
+  fallbackCat = "esperança"
+): string {
+  const collapsed = (raw || "").trim().replace(/\s+/g, " ");
+  if (!collapsed) return fallbackCat;
+  const cleaned = collapsed.toLowerCase();
+  if (cleaned === "__custom__" || cleaned === "nova categoria") {
+    return fallbackCat;
+  }
+  if (BANK_CATEGORY_LOOKUP[cleaned]) return BANK_CATEGORY_LOOKUP[cleaned];
+  const ascii = cleaned.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (BANK_CATEGORY_LOOKUP[ascii]) return BANK_CATEGORY_LOOKUP[ascii];
+
+  if (allowCustom) {
+    return formatCustomCategoryName(collapsed) || fallbackCat;
+  }
+
+  const matched = BANK_CATEGORIES.find(
+    (c) =>
+      cleaned.includes(c) ||
+      ascii.includes(c.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))
+  );
+  return matched || fallbackCat;
+}
+
+function normalizeThemeApproach(
+  raw?: string,
+  fallback: "Expositivo" | "Temático" | "Pastoral" | "Devocional" = "Expositivo"
+): "Expositivo" | "Temático" | "Pastoral" | "Devocional" {
+  const val = (raw || "").trim().toLowerCase();
+  if (val.includes("temat") || val.includes("temát")) return "Temático";
+  if (val.includes("pastor")) return "Pastoral";
+  if (val.includes("devoc")) return "Devocional";
+  if (val.includes("expos")) return "Expositivo";
+  return fallback;
+}
+
+// 7B. Homiletic Themes Generator Endpoint (Banco de Temas Bíblicos)
+app.post("/api/gemini/generate-themes", async (req, res) => {
+  const {
+    mode,
+    inputValue,
+    category,
+    customCategory,
+    approach,
+    variationSeed,
+    existingTitles,
+  } = req.body as {
+    mode?: string;
+    inputValue?: string;
+    category?: string;
+    customCategory?: string;
+    approach?: string;
+    variationSeed?: string;
+    existingTitles?: string[];
+  };
+
+  const validMode =
+    mode === "scripture" || mode === "category" || mode === "topic"
+      ? mode
+      : null;
+
+  if (!validMode) {
+    return res.status(400).json({
+      error: "Modo de geração inválido. Escolha Texto Bíblico, Categoria ou Assunto.",
+    });
+  }
+
+  const trimmedInput = typeof inputValue === "string" ? inputValue.trim().replace(/\s+/g, " ") : "";
+  const trimmedCategory = typeof category === "string" ? category.trim().replace(/\s+/g, " ") : "";
+  const trimmedCustomCategory = typeof customCategory === "string" ? customCategory.trim().replace(/\s+/g, " ") : "";
+
+  if (validMode === "scripture" && !trimmedInput) {
+    return res.status(400).json({
+      error: "Informe uma referência ou trecho bíblico para gerar os temas.",
+    });
+  }
+  if (validMode === "topic" && !trimmedInput) {
+    return res.status(400).json({
+      error: "Informe um assunto, tema ou necessidade pastoral para gerar os temas.",
+    });
+  }
+
+  const isCustomSelector =
+    trimmedCategory === "__custom__" || trimmedCategory.toLowerCase() === "nova categoria";
+  const rawCategoryInput = trimmedCustomCategory || (isCustomSelector ? "" : trimmedCategory);
+
+  if (validMode === "category" && !rawCategoryInput) {
+    return res.status(400).json({
+      error: isCustomSelector
+        ? "Informe o nome da nova categoria para gerar os temas."
+        : "Selecione ou informe uma categoria válida para gerar os temas.",
+    });
+  }
+
+  const normalizedCategory = rawCategoryInput
+    ? normalizeThemeCategory(rawCategoryInput, true, "esperança")
+    : "esperança";
+  const isCustomCategory =
+    validMode === "category" &&
+    !BANK_CATEGORIES.includes(normalizedCategory as (typeof BANK_CATEGORIES)[number]);
+
+  const preferredApproach = normalizeThemeApproach(approach, "Expositivo");
+  const excludeList = Array.isArray(existingTitles)
+    ? existingTitles
+        .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+        .slice(0, 12)
+    : [];
+
+  if (!ai) {
+    const mockThemes = getMockGeneratedThemes({
+      mode: validMode,
+      inputValue: trimmedInput,
+      category: normalizedCategory,
+      approach: preferredApproach,
+      variationSeed,
+      existingTitles: excludeList,
+    });
+    return res.json({
+      themes: mockThemes,
+      fallbackActive: true,
+      fallbackReason:
+        "Chave da API Gemini não configurada no servidor. Sugestões locais sóbrias geradas em modo de contingência.",
+    });
+  }
+
+  const modeContext =
+    validMode === "scripture"
+      ? `MODO TEXTO BÍBLICO:
+- Passagem/Trecho base informado: "${trimmedInput}"
+- TODOS os 3 temas devem brotar diretamente da exegese honesta e do fluxo gramatical/histórico desta passagem (${trimmedInput}), explorando 3 ângulos ou recortes verdadeiramente distintos do mesmo texto.`
+      : validMode === "category"
+      ? `MODO CATEGORIA DO BANCO:
+- Categoria obrigatória: "${normalizedCategory}"${isCustomCategory ? " (categoria personalizada pelo pastor)" : ""}
+- Recorte ou ênfase opcional informado: "${trimmedInput || "Livre dentro da categoria com fidelidade bíblica"}"
+- TODOS os 3 temas devem pertencer exatamente à categoria "${normalizedCategory}", trazendo passagens bíblicas variadas (Antigo e Novo Testamento) e ângulos diferentes para pregação na igreja local.`
+      : `MODO ASSUNTO / NECESSIDADE PASTORAL:
+- Assunto, ocasião ou necessidade pastoral informada: "${trimmedInput}"
+- TODOS os 3 temas devem iluminar diretamente esse assunto real da vida cristã a partir de passagens bíblicas coerentes e bem contextualizadas (evitando versículos isolados fora de contexto).`;
+
+  const exclusionBlock =
+    excludeList.length > 0
+      ? `\nNÃO REPITA nem parafraseie nenhum destes títulos ou abordagens já gerados anteriormente:\n${excludeList.map((t) => `- ${t}`).join("\n")}\nSemente de variação criativa: ${variationSeed || Date.now()}.`
+      : "";
+
+  const categoryGuideline =
+    validMode === "category"
+      ? `3. Para o campo "category", utilize OBRIGATORIAMENTE o valor exato "${normalizedCategory}".`
+      : `3. Para o campo "category", utilize OBRIGATORIAMENTE uma destas chaves exatas em minúsculas: ${BANK_CATEGORIES.join(", ")}.`;
+
+  const prompt = `Gere exatamente 3 propostas distintas e pregáveis de temas homiléticos em português do Brasil para o Banco de Temas Bíblicos de um pastor experiente.
+
+${modeContext}
+
+Abordagem solicitada: ${approach ? preferredApproach : "Variar ou priorizar Expositivo/Pastoral com fidelidade textual"}.${exclusionBlock}
+
+DIRETRIZES DE ESTILO E SOBRIEDADE PASTORAL:
+1. Linguagem limpa, sóbria, direta, calorosa e humana — evitando vocabulário "barroco" artificial, rebuscamento pomposo ou clichês gastos ("glorioso", "bendito", "celestial", "profunda reverência", "impenetrável").
+2. Cada tema precisa ser útil para preparo real de púlpito: título claro e memorável, texto bíblico exato (com capítulo e versículos), tese/resumo conciso (2 a 3 frases objetivas), aplicação pastoral concreta para o cotidiano (1 a 2 frases) e 3 indicações curtas de divisões para esboço (outlineHints).
+${categoryGuideline}
+4. Para o campo "approach", utilize OBRIGATORIAMENTE um destes valores exatos: "Expositivo", "Temático", "Pastoral" ou "Devocional".`;
+
+  try {
+    const data = await generateJSON({
+      contents: prompt,
+      systemInstruction:
+        "Você é um pastor e professor de homilética bíblica sóbrio, experiente e fiel às Escrituras. Produza temas de sermão claros, teologicamente consistentes, humanos e aplicáveis à igreja local.",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          themes: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                scripture: { type: Type.STRING },
+                approach: { type: Type.STRING },
+                category: { type: Type.STRING },
+                summary: { type: Type.STRING },
+                application: { type: Type.STRING },
+                outlineHints: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
+              },
+              required: [
+                "title",
+                "scripture",
+                "approach",
+                "category",
+                "summary",
+                "application",
+                "outlineHints",
+              ],
+            },
+          },
+        },
+        required: ["themes"],
+      },
+    });
+
+    const rawList = Array.isArray(data?.themes) ? data.themes : [];
+    if (rawList.length === 0) {
+      throw new Error("A IA não retornou temas válidos no formato estruturado.");
+    }
+
+    const now = Date.now();
+    const formattedThemes = rawList.slice(0, 4).map((item: any, idx: number) => ({
+      id: `theme_${now}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+      title: String(item?.title || "Tema Homilético").trim().slice(0, 200),
+      scripture: String(
+        item?.scripture || (validMode === "scripture" ? trimmedInput : "Salmos 119:105")
+      )
+        .trim()
+        .slice(0, 140),
+      approach: normalizeThemeApproach(item?.approach, preferredApproach),
+      category:
+        validMode === "category"
+          ? normalizedCategory
+          : normalizeThemeCategory(item?.category, false, normalizedCategory),
+      summary: String(
+        item?.summary || "Exposição fiel da passagem bíblica para edificação da igreja."
+      )
+        .trim()
+        .slice(0, 800),
+      application: String(
+        item?.application || "Aplicação prática à vida diária da comunidade."
+      )
+        .trim()
+        .slice(0, 800),
+      outlineHints: Array.isArray(item?.outlineHints)
+        ? item.outlineHints
+            .filter((h: unknown): h is string => typeof h === "string" && h.trim().length > 0)
+            .map((h: string) => h.trim().slice(0, 240))
+            .slice(0, 5)
+        : [],
+      isGenerated: true,
+      isSaved: false,
+      createdAt: now + idx,
+      sourceMode: validMode,
+      sourceInput: (validMode === "category" ? `${normalizedCategory}${trimmedInput ? ` — ${trimmedInput}` : ""}` : trimmedInput).slice(0, 200),
+    }));
+
+    return res.json({ themes: formattedThemes });
+  } catch (error: any) {
+    console.warn("Generate Themes Error (falling back to simulated themes):", error);
+    const mockThemes = getMockGeneratedThemes({
+      mode: validMode,
+      inputValue: trimmedInput,
+      category: normalizedCategory,
+      approach: preferredApproach,
+      variationSeed,
+      existingTitles: excludeList,
+    });
+    return res.json({
+      themes: mockThemes,
+      fallbackActive: true,
+      fallbackReason:
+        "Limite de cota ou instabilidade momentânea da API Gemini. Sugestões de contingência geradas localmente.",
+    });
+  }
+});
+
 // 8. Individual Activity Generation Endpoint
 app.post("/api/generate-activity", async (req, res) => {
   const { title, subject, grade, duration, objectives, extraInstructions } = req.body;
@@ -2791,6 +3111,205 @@ Por isso, eu quero falar diretamente ao seu coração nesta hora. Você tem vivi
       pastoralCharge: "Pregue esta peroração com tom conversacional, incisivo e acolhedor, olhando nos olhos da congregação com gravidade serena e paixão sincera pela salvação das almas."
     }
   };
+}
+
+function getMockGeneratedThemes(params: {
+  mode: "scripture" | "category" | "topic";
+  inputValue: string;
+  category: string;
+  approach: "Expositivo" | "Temático" | "Pastoral" | "Devocional";
+  variationSeed?: string;
+  existingTitles?: string[];
+}) {
+  const now = Date.now();
+  const { mode, inputValue, category, approach, variationSeed, existingTitles = [] } = params;
+  const seedShift = (variationSeed ? variationSeed.length : 0) + existingTitles.length;
+  const baseRef = mode === "scripture" && inputValue ? inputValue : "Romanos 8:28-39";
+  const focusTopic = inputValue || category || "fidelidade cristã";
+
+  const pools: Record<"scripture" | "category" | "topic", Array<{
+    title: string;
+    scripture: string;
+    category: string;
+    summary: string;
+    application: string;
+    outlineHints: string[];
+  }>> = {
+    scripture: [
+      {
+        title: `Firmeza diante do texto de ${baseRef}`,
+        scripture: baseRef,
+        category,
+        summary: `Exposição direta do argumento central de ${baseRef}, destacando como o Senhor sustenta o crente nas pressões reais da semana sem promessas fáceis.`,
+        application: `Levar a igreja a substituir a ansiedade cotidiana pela obediência simples àquilo que ${baseRef} já afirma com clareza.`,
+        outlineHints: [
+          "O cenário humano enfrentado pelo texto",
+          "O movimento principal da ação de Deus na passagem",
+          "A resposta prática da comunidade reunida",
+        ],
+      },
+      {
+        title: `O apelo à lucidez espiritual em ${baseRef}`,
+        scripture: baseRef,
+        category,
+        summary: `Leitura pastoral de ${baseRef} observando os contrastes internos do texto e o chamado do autor bíblico ao discernimento em tempos confusos.`,
+        application: `Confrontar distrações e rotinas automáticas, chamando cada ouvinte ao exame honesto diante da Palavra.`,
+        outlineHints: [
+          "O contraste que o autor bíblico estabelece",
+          "O erro que o texto procura corrigir",
+          "O caminho de retorno proposto ao coração",
+        ],
+      },
+      {
+        title: `A esperança concreta revelada em ${baseRef}`,
+        scripture: baseRef,
+        category,
+        summary: `Aproximação cristocêntrica de ${baseRef}, conectando a promessa do texto à obra suficiente de Cristo e à perseverança dos santos.`,
+        application: `Encorajar irmãos cansados a descansar na fidelidade de Deus em vez de medir o valor da fé pelo estado emocional do momento.`,
+        outlineHints: [
+          "A base sólida da promessa no texto",
+          "Onde a passagem aponta para Cristo",
+          "Como caminhar amanhã à luz dessa certeza",
+        ],
+      },
+      {
+        title: `Discernindo a voz de Deus em ${baseRef}`,
+        scripture: baseRef,
+        category,
+        summary: `Análise sóbria das palavras-chave de ${baseRef} e de como elas corrigem expectativas distorcidas sobre sucesso e espiritualidade.`,
+        application: `Incentivar hábitos simples de oração e reconciliação no lar durante a semana.`,
+        outlineHints: [
+          "A pergunta implícita na passagem",
+          "A resposta direta das Escrituras",
+          "Um passo concreto de obediência hoje",
+        ],
+      },
+    ],
+    category: [
+      {
+        title: `Raízes firmes na prática de ${category}`,
+        scripture: "Colossenses 2:6-7",
+        category,
+        summary: `Estudo bíblico sobre como o crescimento em ${category}${inputValue ? ` (${inputValue})` : ""} nasce da permanência diária em Cristo, não de ativismo apressado.`,
+        application: `Avaliar o que tem alimentado nossos hábitos espirituais de segunda a sábado e reconstruir disciplinas simples.`,
+        outlineHints: [
+          "Receber a Cristo como ponto de partida",
+          "Criar raízes antes de buscar visibilidade",
+          "Gratidão como marca de maturidade",
+        ],
+      },
+      {
+        title: `Caminhando juntos no chamado à ${category}`,
+        scripture: "Hebreus 10:23-25",
+        category,
+        summary: `Mensagem pastoral sobre o papel insubstituível da igreja local no fortalecimento de ${category}${inputValue ? `, com atenção a ${inputValue}` : ""}.`,
+        application: `Sair do isolamento individualista e assumir cuidado mútuo concreto com quem caminha ao nosso lado.`,
+        outlineHints: [
+          "A confissão firme da esperança",
+          "O estímulo mútuo ao amor e às boas obras",
+          "A perseverança na comunhão presencial",
+        ],
+      },
+      {
+        title: `Sobriedade e fidelidade em ${category}`,
+        scripture: "1 Pedro 1:13-16",
+        category,
+        summary: `Reflexão exegética sobre lucidez mental e coerência de vida na vivência de ${category}, mantendo os pés no chão e o coração em Deus.`,
+        application: `Identificar áreas onde nos moldamos aos impulsos do ambiente e retomar uma conduta íntegra.`,
+        outlineHints: [
+          "Preparar o entendimento com sobriedade",
+          "Romper com os antigos moldes",
+          "Refletir o caráter de quem nos chamou",
+        ],
+      },
+      {
+        title: `Quando o coração é provado em ${category}`,
+        scripture: "Tiago 1:2-5",
+        category,
+        summary: `Exposição direta sobre como as provações reais amadurecem nossa prática de ${category} sem recorrer a triunfalismos artificiais.`,
+        application: `Pedir sabedoria a Deus nas decisões difíceis em vez de apenas pedir alívio imediato.`,
+        outlineHints: [
+          "A honestidade diante das provações",
+          "O trabalho silencioso da perseverança",
+          "A oração por sabedoria sem duplicidade",
+        ],
+      },
+    ],
+    topic: [
+      {
+        title: `Luz das Escrituras para enfrentar ${focusTopic}`,
+        scripture: "Salmos 46:1-7",
+        category,
+        summary: `Abordagem pastoral sobre ${focusTopic}, mostrando que o refúgio bíblico não nega a realidade da luta, mas ancora a alma na presença constante de Deus.`,
+        application: `Convidar a congregação a nomear seus temores diante de Deus em oração sincera e partilha fraterna.`,
+        outlineHints: [
+          "Reconhecer o tremor sem fingir força",
+          "A presença firme de Deus no meio da cidade",
+          "Aquietar o coração sob o governo divino",
+        ],
+      },
+      {
+        title: `O cuidado de Cristo no cotidiano de ${focusTopic}`,
+        scripture: "Mateus 11:28-30",
+        category,
+        summary: `Exposição sobre o convite de Jesus aos cansados aplicado a ${focusTopic}: trocar o peso da autossuficiência pelo jugo leve do discipulado.`,
+        application: `Reordenar compromissos e expectativas à luz do descanso prometido por Cristo.`,
+        outlineHints: [
+          "O diagnóstico do cansaço da alma",
+          "Aprender a mansidão com o Mestre",
+          "O alívio encontrado na obediência",
+        ],
+      },
+      {
+        title: `Esperança lúcida diante de ${focusTopic}`,
+        scripture: "2 Coríntios 4:7-18",
+        category,
+        summary: `O apóstolo Paulo ensina sobre vasos de barro e peso eterno de glória, trazendo realismo e consolo cristão para quem lida com ${focusTopic}.`,
+        application: `Não medir a fidelidade de Deus pela aparência imediata das circunstâncias, mantendo os olhos no que é eterno.`,
+        outlineHints: [
+          "A fragilidade assumida dos vasos de barro",
+          "Pressão real sem desespero definitivo",
+          "A renovação interior dia após dia",
+        ],
+      },
+      {
+        title: `Integridade e esperança em torno de ${focusTopic}`,
+        scripture: "Filipenses 4:4-9",
+        category,
+        summary: `Conselhos práticos de Paulo sobre oração, mente guardada e ação concreta para atravessar ${focusTopic} com paz que não depende do cenário externo.`,
+        application: `Praticar a oração com ações de graças e cultivar pensamentos verdadeiros durante a semana.`,
+        outlineHints: [
+          "Apresentar as inquietações sem disfarces",
+          "A paz que guarda mente e coração",
+          "Colocar em prática o que se aprendeu",
+        ],
+      },
+    ],
+  };
+
+  const candidates = pools[mode];
+  const filtered = candidates.filter((c) => !existingTitles.includes(c.title));
+  const ordered = (filtered.length >= 3 ? filtered : candidates).slice();
+  const rotated = [
+    ...ordered.slice(seedShift % ordered.length),
+    ...ordered.slice(0, seedShift % ordered.length),
+  ].slice(0, 3);
+
+  return rotated.map((item, idx) => ({
+    id: `theme_${now}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+    title: item.title.slice(0, 200),
+    scripture: item.scripture.slice(0, 140),
+    approach,
+    category: item.category,
+    summary: item.summary.slice(0, 800),
+    application: item.application.slice(0, 800),
+    outlineHints: item.outlineHints,
+    isGenerated: true,
+    isSaved: false,
+    createdAt: now + idx,
+    sourceMode: mode,
+    sourceInput: (mode === "category" ? `${category}${inputValue ? ` — ${inputValue}` : ""}` : inputValue).slice(0, 200),
+  }));
 }
 
 export default app;

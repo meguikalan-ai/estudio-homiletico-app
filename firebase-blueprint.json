@@ -72,11 +72,27 @@
       "type": "object",
       "properties": {
         "id": { "type": "string" },
+        "topicId": { "type": "string" },
         "role": { "type": "string" },
         "content": { "type": "string" },
         "timestamp": { "type": "number" }
       },
       "required": ["id", "role", "content", "timestamp"]
+    },
+    "TheologicalChatTopic": {
+      "title": "TheologicalChatTopic",
+      "description": "Consultor Biblico e Teologico conversation topic/subject thread synchronized across devices.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "passageReference": { "type": "string", "maxLength": 120 },
+        "lastMessagePreview": { "type": "string", "maxLength": 240 },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "title", "createdAt", "updatedAt"]
     },
     "TheologicalSieveEntry": {
       "title": "TheologicalSieveEntry",
@@ -107,6 +123,10 @@
     "/users/{uid}/illustrations/{illustrationId}": {
       "schema": "VisualIllustration",
       "description": "User-scoped pulpit illustrations collection."
+    },
+    "/users/{uid}/theological_topics/{topicId}": {
+      "schema": "TheologicalChatTopic",
+      "description": "User-scoped Consultor Biblico topic threads synchronized across devices."
     },
     "/users/{uid}/theological_chat/{messageId}": {
       "schema": "TheologicalChatMessage",

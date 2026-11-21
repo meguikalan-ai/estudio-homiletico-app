@@ -1,6 +1,25 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidChatTopic(data, uid, topicId) {
+      return data.keys().hasAll(['id', 'title', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'title', 'passageReference', 'lastMessagePreview', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id == topicId && data.id.size() <= 128
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
+        && data.createdAt is number && data.updatedAt is number
+        && (!('userId' in data) || (data.userId is string && data.userId == uid))
+        && (!('passageReference' in data) || (data.passageReference is string && data.passageReference.size() <= 120))
+        && (!('lastMessagePreview' in data) || (data.lastMessagePreview is string && data.lastMessagePreview.size() <= 240));
+    }
+
     // Acesso para o UID fixo pastoral (sem necessidade de login) ou via autenticação
     match /users/{uid} {
       allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
@@ -21,6 +40,13 @@ service cloud.firestore {
         allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
       }
 
+      match /theological_topics/{topicId} {
+        allow get, list, delete: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
+        allow create, update: if (uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid))
+          && isValidId(topicId)
+          && isValidChatTopic(request.resource.data, uid, topicId);
+      }
+
       match /theological_chat/{messageId} {
         allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
       }
@@ -34,10 +60,6 @@ service cloud.firestore {
       }
 
       match /tombstones/{tombstoneId} {
-        allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
-      }
-
-      match /{document=**} {
         allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
       }
     }

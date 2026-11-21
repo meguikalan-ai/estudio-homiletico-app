@@ -20,13 +20,14 @@ import {
   type DocumentData,
   type QuerySnapshot
 } from '../firebase';
-import { Sermon, ExpositorySeries, VisualIllustration, TheologicalChatMessage, TheologicalSieveResult } from '../types';
+import { Sermon, ExpositorySeries, VisualIllustration, TheologicalChatMessage, TheologicalChatTopic, TheologicalSieveResult } from '../types';
 
 export const PASTORAL_SERMONS_COLLECTION = 'pastoral_sermons';
 export const SERMONS_COLLECTION = 'sermons';
 export const SERIES_COLLECTION = 'series';
 export const TOMBSTONES_COLLECTION = 'tombstones';
 export const ILLUSTRATIONS_COLLECTION = 'illustrations';
+export const THEOLOGICAL_TOPICS_COLLECTION = 'theological_topics';
 export const THEOLOGICAL_CHAT_COLLECTION = 'theological_chat';
 export const THEOLOGICAL_SIEVE_COLLECTION = 'theological_sieve';
 export const CHAT_META_COLLECTION = 'chat_meta';
@@ -35,8 +36,11 @@ export const LOCAL_STORAGE_DELETED_KEY = 'pastoral_deleted_sermon_ids';
 export const LOCAL_STORAGE_ILLUSTRATIONS_KEY = 'pastoral_visual_illustrations';
 export const LOCAL_STORAGE_DELETED_ILL_KEY = 'pastoral_deleted_illustration_ids';
 export const LOCAL_STORAGE_CHAT_KEY = 'pastoral_theological_chat';
+export const LOCAL_STORAGE_CHAT_TOPICS_KEY = 'pastoral_theological_chat_topics';
+export const LOCAL_STORAGE_DELETED_TOPICS_KEY = 'pastoral_deleted_topic_ids';
 export const LOCAL_STORAGE_SIEVE_KEY = 'theological_sieve_history';
 export const LOCAL_STORAGE_DELETED_SIEVE_KEY = 'pastoral_deleted_sieve_ids';
+export const LEGACY_CHAT_TOPIC_ID = 'topic-geral';
 
 // Rastreamento do último erro do Firestore para diagnósticos na UI
 let lastFirestoreError: string | null = null;
@@ -852,7 +856,7 @@ export function subscribeToUserSermons(
     const legacySermonsMap = new Map<string, Sermon>();
 
     const isTombstoned = (id: string, sermon?: Sermon): boolean => {
-      if (id.startsWith('ill_') || id.startsWith('sieve_')) return true;
+      if (id.startsWith('ill_') || id.startsWith('sieve_') || id.startsWith('topic_')) return true;
       const deletedAt = cloudTombstones.get(id);
       if (deletedAt === undefined) return false;
       if (!sermon) return true;
@@ -926,7 +930,14 @@ export function subscribeToUserSermons(
         const localDeleted = getDeletedSermonIds();
         tombstoneSnap.forEach((docSnap) => {
           const data = docSnap.data() as { id?: string; deletedAt?: number; entityType?: string };
-          if (docSnap.id.startsWith('ill_') || docSnap.id.startsWith('sieve_') || data?.entityType === 'illustration' || data?.entityType === 'sieve') {
+          if (
+            docSnap.id.startsWith('ill_') ||
+            docSnap.id.startsWith('sieve_') ||
+            docSnap.id.startsWith('topic_') ||
+            data?.entityType === 'illustration' ||
+            data?.entityType === 'sieve' ||
+            data?.entityType === 'topic'
+          ) {
             return;
           }
           const targetId = data?.id || docSnap.id;
@@ -1600,7 +1611,251 @@ export async function syncAllLocalIllustrationsToCloud(localList?: VisualIllustr
   }
 }
 
-// ==================== CONSULTOR BÍBLICO E TEOLÓGICO (REAL-TIME SYNC) ====================
+// ==================== CONSULTOR BÍBLICO E TEOLÓGICO (ASSUNTOS + REAL-TIME SYNC) ====================
+
+export function getDeletedTopicIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_DELETED_TOPICS_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function markTopicAsDeleted(topicId: string): void {
+  if (!topicId) return;
+  try {
+    const set = getDeletedTopicIds();
+    set.add(topicId);
+    localStorage.setItem(LOCAL_STORAGE_DELETED_TOPICS_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
+function sanitizeChatTopicPayload(topic: TheologicalChatTopic, uid: string): TheologicalChatTopic {
+  const safeId = (topic.id || `topic-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const safeTitle = (topic.title || 'Novo Assunto').trim().slice(0, 160) || 'Novo Assunto';
+  const payload: TheologicalChatTopic = {
+    id: safeId,
+    userId: uid,
+    title: safeTitle,
+    createdAt: Number(topic.createdAt) || Date.now(),
+    updatedAt: Number(topic.updatedAt) || Date.now()
+  };
+  if (topic.passageReference && topic.passageReference.trim()) {
+    payload.passageReference = topic.passageReference.trim().slice(0, 120);
+  }
+  if (topic.lastMessagePreview && topic.lastMessagePreview.trim()) {
+    payload.lastMessagePreview = topic.lastMessagePreview.trim().slice(0, 240);
+  }
+  return payload;
+}
+
+export async function saveChatTopicToCloud(topic: TheologicalChatTopic, userId?: string): Promise<boolean> {
+  if (!db || !topic || !topic.id) return false;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return false;
+
+  const targetPath = `users/${uid}/${THEOLOGICAL_TOPICS_COLLECTION}/${topic.id}`;
+  try {
+    const payload = sanitizeChatTopicPayload(topic, uid);
+    await setDoc(doc(db, 'users', uid, THEOLOGICAL_TOPICS_COLLECTION, payload.id), payload, { merge: true });
+    setLastFirestoreError(null);
+    recordSyncLog('upload', `Assunto sincronizado no Consultor Bíblico: "${payload.title}"`, `ID: ${payload.id}`);
+    return true;
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    notifyFirestoreError({
+      code: (err as { code?: string })?.code || 'firestore/topic-save-error',
+      message: errMsg,
+      path: targetPath,
+      timestamp: Date.now()
+    });
+    recordSyncLog('error', `Falha ao salvar assunto do Consultor Bíblico: ${errMsg}`);
+    return false;
+  }
+}
+
+export async function deleteChatTopicFromCloud(topicId: string, userId?: string): Promise<boolean> {
+  if (!topicId) return false;
+  markTopicAsDeleted(topicId);
+  if (!db) return true;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return true;
+
+  const targetPath = `users/${uid}/${THEOLOGICAL_TOPICS_COLLECTION}/${topicId}`;
+  try {
+    const chatSnap = await getDocs(collection(db, 'users', uid, THEOLOGICAL_CHAT_COLLECTION));
+    const docsToDelete: DocumentReference<DocumentData>[] = [];
+    chatSnap.forEach(d => {
+      const data = d.data() as TheologicalChatMessage;
+      const effectiveTopicId = data?.topicId || LEGACY_CHAT_TOPIC_ID;
+      if (effectiveTopicId === topicId) {
+        docsToDelete.push(d.ref);
+      }
+    });
+
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'users', uid, THEOLOGICAL_TOPICS_COLLECTION, topicId));
+    batch.set(doc(db, 'users', uid, TOMBSTONES_COLLECTION, `topic_${topicId}`), {
+      id: topicId,
+      entityType: 'topic',
+      deletedAt: Date.now()
+    });
+    docsToDelete.slice(0, 450).forEach(ref => batch.delete(ref));
+    await batch.commit();
+
+    // Se houver mais de 450 mensagens associadas ao assunto, limpa o restante em lotes
+    for (let i = 450; i < docsToDelete.length; i += 450) {
+      const extraBatch = writeBatch(db);
+      docsToDelete.slice(i, i + 450).forEach(ref => extraBatch.delete(ref));
+      await extraBatch.commit();
+    }
+
+    setLastFirestoreError(null);
+    recordSyncLog('delete', `Assunto removido do Consultor Bíblico em todos os dispositivos`, `ID: ${topicId}`);
+    return true;
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    notifyFirestoreError({
+      code: (err as { code?: string })?.code || 'firestore/topic-delete-error',
+      message: errMsg,
+      path: targetPath,
+      timestamp: Date.now()
+    });
+    recordSyncLog('error', `Erro ao excluir assunto do Consultor Bíblico: ${errMsg}`);
+    return false;
+  }
+}
+
+export async function syncAllLocalTopicsToCloud(topics: TheologicalChatTopic[], userId?: string): Promise<number> {
+  if (!db || !topics || topics.length === 0) return 0;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return 0;
+
+  try {
+    const [topicsSnap, tombSnap] = await Promise.all([
+      getDocs(collection(db, 'users', uid, THEOLOGICAL_TOPICS_COLLECTION)),
+      getDocs(collection(db, 'users', uid, TOMBSTONES_COLLECTION))
+    ]);
+
+    const deletedIds = getDeletedTopicIds();
+    tombSnap.forEach(d => {
+      const data = d.data() as { id?: string; entityType?: string };
+      if (d.id.startsWith('topic_') || data?.entityType === 'topic') {
+        deletedIds.add(data?.id || d.id.replace(/^topic_/, ''));
+      }
+    });
+
+    const cloudMap = new Map<string, number>();
+    topicsSnap.forEach(d => {
+      const data = d.data() as TheologicalChatTopic;
+      cloudMap.set(d.id, Number(data?.updatedAt || 0));
+    });
+
+    const toUpload = topics.filter(t => {
+      if (!t || !t.id || deletedIds.has(t.id)) return false;
+      const cloudUpdatedAt = cloudMap.get(t.id);
+      return cloudUpdatedAt === undefined || (t.updatedAt || 0) > cloudUpdatedAt;
+    });
+    if (toUpload.length === 0) return 0;
+
+    const batch = writeBatch(db);
+    for (const topic of toUpload) {
+      const payload = sanitizeChatTopicPayload(topic, uid);
+      batch.set(doc(db, 'users', uid, THEOLOGICAL_TOPICS_COLLECTION, payload.id), payload, { merge: true });
+    }
+    await batch.commit();
+    setLastFirestoreError(null);
+    return toUpload.length;
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    setLastFirestoreError(errMsg);
+    return 0;
+  }
+}
+
+export function subscribeToTheologicalTopics(
+  userId: string | undefined,
+  onUpdate: (topics: TheologicalChatTopic[], deletedTopicIds: Set<string>) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe | null {
+  if (!db) return null;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return null;
+
+  try {
+    const cloudMap = new Map<string, TheologicalChatTopic>();
+    const deletedMap = new Map<string, number>();
+    getDeletedTopicIds().forEach(id => deletedMap.set(id, Date.now()));
+
+    const isTopicTombstoned = (topicId: string): boolean => {
+      return deletedMap.has(topicId);
+    };
+
+    const emit = () => {
+      const list = Array.from(cloudMap.values()).filter(item => item.id && !isTopicTombstoned(item.id));
+      list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      const deletedSet = new Set<string>(deletedMap.keys());
+      onUpdate(list, deletedSet);
+    };
+
+    const unsubTomb = onSnapshot(
+      collection(db, 'users', uid, TOMBSTONES_COLLECTION),
+      (snap) => {
+        const localDeleted = getDeletedTopicIds();
+        deletedMap.clear();
+        localDeleted.forEach(id => deletedMap.set(id, Date.now()));
+        snap.forEach(d => {
+          const data = d.data() as { id?: string; entityType?: string; deletedAt?: number };
+          if (d.id.startsWith('topic_') || data?.entityType === 'topic') {
+            const targetId = data?.id || d.id.replace(/^topic_/, '');
+            deletedMap.set(targetId, Number(data?.deletedAt) || Date.now());
+            localDeleted.add(targetId);
+          }
+        });
+        try {
+          localStorage.setItem(LOCAL_STORAGE_DELETED_TOPICS_KEY, JSON.stringify(Array.from(localDeleted)));
+        } catch {}
+        emit();
+      },
+      (err) => {
+        console.warn('[Firestore Chat Topics Tombstones Listener]:', err);
+      }
+    );
+
+    const unsubTopics = onSnapshot(
+      query(collection(db, 'users', uid, THEOLOGICAL_TOPICS_COLLECTION), orderBy('updatedAt', 'desc')),
+      (snap) => {
+        cloudMap.clear();
+        snap.forEach(d => {
+          const data = d.data() as TheologicalChatTopic;
+          if (data && data.title) {
+            cloudMap.set(d.id, { ...data, id: data.id || d.id });
+          }
+        });
+        setLastFirestoreError(null);
+        emit();
+      },
+      (err) => {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        notifyFirestoreError({
+          code: (err as { code?: string })?.code || 'firestore/topics-listener-error',
+          message: errMsg,
+          path: `users/${uid}/${THEOLOGICAL_TOPICS_COLLECTION}`,
+          timestamp: Date.now()
+        });
+        if (onError) onError(err);
+      }
+    );
+
+    return () => {
+      try { unsubTomb(); unsubTopics(); } catch {}
+    };
+  } catch (err) {
+    if (onError) onError(err);
+    return null;
+  }
+}
 
 export async function saveChatMessageToCloud(msg: TheologicalChatMessage, userId?: string): Promise<boolean> {
   if (!db || !msg || msg.id === 'welcome-msg') return false;
@@ -1611,6 +1866,7 @@ export async function saveChatMessageToCloud(msg: TheologicalChatMessage, userId
     const docRef = doc(db, 'users', uid, THEOLOGICAL_CHAT_COLLECTION, msg.id);
     const payload = cleanUndefinedRecursively({
       ...msg,
+      topicId: msg.topicId || LEGACY_CHAT_TOPIC_ID,
       userId: uid,
       updatedAt: msg.timestamp || Date.now()
     });
@@ -1655,23 +1911,47 @@ export async function syncAllLocalChatToCloud(messages: TheologicalChatMessage[]
   if (!uid) return 0;
 
   try {
-    const [chatSnap, metaSnap] = await Promise.all([
+    const [chatSnap, metaSnap, tombSnap] = await Promise.all([
       getDocs(collection(db, 'users', uid, THEOLOGICAL_CHAT_COLLECTION)),
-      getDoc(doc(db, 'users', uid, CHAT_META_COLLECTION, 'state'))
+      getDoc(doc(db, 'users', uid, CHAT_META_COLLECTION, 'state')),
+      getDocs(collection(db, 'users', uid, TOMBSTONES_COLLECTION))
     ]);
     const clearedAt = metaSnap.exists() ? Number((metaSnap.data() as { clearedAt?: number })?.clearedAt || 0) : 0;
+    const deletedTopics = getDeletedTopicIds();
+    tombSnap.forEach(d => {
+      const data = d.data() as { id?: string; entityType?: string };
+      if (d.id.startsWith('topic_') || data?.entityType === 'topic') {
+        deletedTopics.add(data?.id || d.id.replace(/^topic_/, ''));
+      }
+    });
+
     const existingIds = new Set<string>();
     chatSnap.forEach(d => existingIds.add(d.id));
 
     const toUpload = messages.filter(
-      m => m && m.id && m.id !== 'welcome-msg' && !existingIds.has(m.id) && (m.timestamp || 0) > clearedAt
+      m =>
+        m &&
+        m.id &&
+        m.id !== 'welcome-msg' &&
+        !existingIds.has(m.id) &&
+        (m.timestamp || 0) > clearedAt &&
+        !deletedTopics.has(m.topicId || LEGACY_CHAT_TOPIC_ID)
     );
     if (toUpload.length === 0) return 0;
 
     const batch = writeBatch(db);
     for (const msg of toUpload) {
       const ref = doc(db, 'users', uid, THEOLOGICAL_CHAT_COLLECTION, msg.id);
-      batch.set(ref, cleanUndefinedRecursively({ ...msg, userId: uid, updatedAt: msg.timestamp || Date.now() }), { merge: true });
+      batch.set(
+        ref,
+        cleanUndefinedRecursively({
+          ...msg,
+          topicId: msg.topicId || LEGACY_CHAT_TOPIC_ID,
+          userId: uid,
+          updatedAt: msg.timestamp || Date.now()
+        }),
+        { merge: true }
+      );
     }
     await batch.commit();
     setLastFirestoreError(null);
@@ -1723,7 +2003,7 @@ export function subscribeToTheologicalChat(
         snap.forEach(d => {
           const data = d.data() as TheologicalChatMessage;
           if (data && data.content) {
-            list.push({ ...data, id: data.id || d.id });
+            list.push({ ...data, id: data.id || d.id, topicId: data.topicId || LEGACY_CHAT_TOPIC_ID });
           }
         });
         currentMessages = list;

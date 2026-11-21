@@ -179,8 +179,19 @@ export interface ExegesisResponse {
   comparedVerses?: CompareVersionText[];
 }
 
+export interface TheologicalChatTopic {
+  id: string;
+  userId?: string;
+  title: string;
+  passageReference?: string;
+  lastMessagePreview?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface TheologicalChatMessage {
   id: string;
+  topicId?: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;

@@ -241,140 +241,160 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
     <div className={`fixed inset-0 z-[9999] flex flex-col ${themeStyles.bg} ${themeStyles.text} select-none overflow-hidden animate-fade-in`}>
       
       {/* 1. TOP PULPIT DOCK / CONTROL BAR */}
-      <header className={`sticky top-0 z-50 ${themeStyles.headerBg} backdrop-blur-md px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-lg transition-all`}>
+      <header className={`shrink-0 sticky top-0 z-50 ${themeStyles.headerBg} backdrop-blur-md px-3 sm:px-4 py-2 sm:py-2.5 pt-[max(0.5rem,env(safe-area-inset-top))] flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-2 sm:gap-3 shadow-lg transition-all`}>
         
-        {/* Left: Clock, Timer Controls & Wake Lock Status */}
-        <div className="flex items-center gap-3">
-          
-          {/* Relógio em Tempo Real */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/40 border border-white/10 font-mono text-sm tracking-wider">
-            <Clock className="w-4 h-4 text-[#D4AF37]" />
-            <span className="font-bold">{currentTime}</span>
-          </div>
-
-          {/* Cronômetro / Timer */}
-          <div className={`flex items-center gap-2 px-3 py-1 rounded-xl border transition-all ${
-            isOvertime 
-              ? 'bg-red-950/60 border-red-500/80 text-red-300 animate-pulse' 
-              : timerRunning 
-                ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300' 
-                : 'bg-black/40 border-white/10 text-gray-200'
-          }`}>
-            <button
-              onClick={() => setTimerRunning(!timerRunning)}
-              className="p-1 rounded-lg hover:bg-white/10 transition-all cursor-pointer"
-              title={timerRunning ? "Pausar Cronômetro" : "Iniciar Cronômetro"}
-            >
-              {timerRunning ? <Pause className="w-4 h-4 text-amber-400" /> : <Play className="w-4 h-4 text-emerald-400" />}
-            </button>
-
-            <div className="font-mono text-sm font-bold tracking-wider">
-              {timerMode === 'stopwatch' ? (
-                formatTimer(secondsElapsed)
-              ) : isOvertime ? (
-                <span>+{formatTimer(overtimeSeconds)}</span>
-              ) : (
-                formatTimer(remainingSeconds)
-              )}
+        {/* Left: Clock, Timer Controls & Wake Lock Status (+ Mobile Sair pinned top-right) */}
+        <div className="flex items-center justify-between sm:justify-start gap-2 sm:gap-3 w-full sm:w-auto min-w-0">
+          <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 overflow-x-auto no-scrollbar">
+            {/* Relógio em Tempo Real */}
+            <div className="hidden min-[380px]:flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-black/40 border border-white/10 font-mono text-xs sm:text-sm tracking-wider shrink-0">
+              <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#D4AF37]" />
+              <span className="font-bold">{currentTime}</span>
             </div>
 
-            {/* Mode Switch & Reset */}
-            <button
-              onClick={() => setTimerMode(timerMode === 'countdown' ? 'stopwatch' : 'countdown')}
-              className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-gray-300 cursor-pointer"
-              title="Alternar entre contagem regressiva e progressiva"
-            >
-              {timerMode === 'countdown' ? `${targetDurationMinutes}m` : 'Prog'}
-            </button>
+            {/* Cronômetro / Timer */}
+            <div className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 rounded-xl border transition-all shrink-0 ${
+              isOvertime 
+                ? 'bg-red-950/60 border-red-500/80 text-red-300 animate-pulse' 
+                : timerRunning 
+                  ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300' 
+                  : 'bg-black/40 border-white/10 text-gray-200'
+            }`}>
+              <button
+                type="button"
+                onClick={() => setTimerRunning(!timerRunning)}
+                className="p-1 rounded-lg hover:bg-white/10 transition-all cursor-pointer"
+                title={timerRunning ? "Pausar Cronômetro" : "Iniciar Cronômetro"}
+              >
+                {timerRunning ? <Pause className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" /> : <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />}
+              </button>
 
-            <button
-              onClick={() => {
-                setSecondsElapsed(0);
-                setTimerRunning(false);
-              }}
-              className="p-1 text-gray-400 hover:text-white cursor-pointer"
-              title="Zerar Cronômetro"
+              <div className="font-mono text-xs sm:text-sm font-bold tracking-wider">
+                {timerMode === 'stopwatch' ? (
+                  formatTimer(secondsElapsed)
+                ) : isOvertime ? (
+                  <span>+{formatTimer(overtimeSeconds)}</span>
+                ) : (
+                  formatTimer(remainingSeconds)
+                )}
+              </div>
+
+              {/* Mode Switch & Reset */}
+              <button
+                type="button"
+                onClick={() => setTimerMode(timerMode === 'countdown' ? 'stopwatch' : 'countdown')}
+                className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-gray-300 cursor-pointer"
+                title="Alternar entre contagem regressiva e progressiva"
+              >
+                {timerMode === 'countdown' ? `${targetDurationMinutes}m` : 'Prog'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSecondsElapsed(0);
+                  setTimerRunning(false);
+                }}
+                className="p-1 text-gray-400 hover:text-white cursor-pointer"
+                title="Zerar Cronômetro"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Preset buttons when timer paused */}
+            {!timerRunning && timerMode === 'countdown' && (
+              <div className="hidden sm:flex items-center gap-1 shrink-0">
+                {[20, 30, 40, 45, 60].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => {
+                      setTargetDurationMinutes(m);
+                      setSecondsElapsed(0);
+                    }}
+                    className={`px-2 py-0.5 text-[10px] font-mono rounded transition-all cursor-pointer ${
+                      targetDurationMinutes === m
+                        ? 'bg-[#D4AF37] text-black font-bold'
+                        : 'bg-white/5 hover:bg-white/10 text-gray-400'
+                    }`}
+                  >
+                    {m}m
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Wake Lock Status Indicator */}
+            <div 
+              onClick={wakeLockActive ? releaseWakeLock : requestWakeLock}
+              className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-full text-[11px] font-medium border cursor-pointer select-none transition-all shrink-0 ${
+                wakeLockActive 
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 shadow-xs' 
+                  : 'bg-gray-800/40 border-gray-700 text-gray-400 hover:text-gray-200'
+              }`}
+              title={wakeLockSupported ? "Clique para alternar o bloqueio de desligamento de tela" : "Wake Lock não suportado pelo navegador"}
             >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
+              <Lightbulb className={`w-3.5 h-3.5 ${wakeLockActive ? 'text-amber-400 animate-pulse' : 'text-gray-500'}`} />
+              <span className="hidden md:inline">{wakeLockActive ? 'Tela Sempre Ativa' : 'Tela Padrão'}</span>
+            </div>
           </div>
 
-          {/* Preset buttons when timer paused */}
-          {!timerRunning && timerMode === 'countdown' && (
-            <div className="hidden sm:flex items-center gap-1">
-              {[20, 30, 40, 45, 60].map((m) => (
-                <button
-                  key={m}
-                  onClick={() => {
-                    setTargetDurationMinutes(m);
-                    setSecondsElapsed(0);
-                  }}
-                  className={`px-2 py-0.5 text-[10px] font-mono rounded transition-all cursor-pointer ${
-                    targetDurationMinutes === m
-                      ? 'bg-[#D4AF37] text-black font-bold'
-                      : 'bg-white/5 hover:bg-white/10 text-gray-400'
-                  }`}
-                >
-                  {m}m
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Wake Lock Status Indicator */}
-          <div 
-            onClick={wakeLockActive ? releaseWakeLock : requestWakeLock}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border cursor-pointer select-none transition-all ${
-              wakeLockActive 
-                ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 shadow-xs' 
-                : 'bg-gray-800/40 border-gray-700 text-gray-400 hover:text-gray-200'
-            }`}
-            title={wakeLockSupported ? "Clique para alternar o bloqueio de desligamento de tela" : "Wake Lock não suportado pelo navegador"}
+          {/* Mobile Sair Button: sempre visível no canto superior direito */}
+          <button
+            type="button"
+            onClick={onClose}
+            className="sm:hidden flex items-center gap-1 px-2.5 py-1.5 bg-red-600/25 hover:bg-red-600/40 text-red-200 hover:text-white rounded-xl border border-red-500/40 text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
+            title="Sair do Modo Púlpito"
           >
-            <Lightbulb className={`w-3.5 h-3.5 ${wakeLockActive ? 'text-amber-400 animate-pulse' : 'text-gray-500'}`} />
-            <span className="hidden md:inline">{wakeLockActive ? 'Tela Sempre Ativa' : 'Tela Padrão'}</span>
-          </div>
-
+            <X className="w-4 h-4 shrink-0" />
+            <span>Sair</span>
+          </button>
         </div>
 
         {/* Right: Typography, Theme, Navigation Index & Fullscreen/Exit */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-1.5 sm:gap-2 w-full sm:w-auto">
           
           {/* Quick Section Index Trigger */}
           <button
+            type="button"
             onClick={() => setShowQuickIndex(!showQuickIndex)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-gray-300 hover:text-white transition-all cursor-pointer"
+            className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-gray-300 hover:text-white transition-all cursor-pointer"
             title="Índice e Navegação Rápida"
           >
             <ListOrdered className="w-3.5 h-3.5 text-[#D4AF37]" />
+            <span className="sm:hidden">Tópicos</span>
             <span className="hidden sm:inline">Navegar Tópicos</span>
           </button>
 
           {/* View Density Toggle (Full vs Outline) */}
           <button
+            type="button"
             onClick={() => setViewDensity(viewDensity === 'full' ? 'outline' : 'full')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-gray-300 hover:text-white transition-all cursor-pointer"
+            className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-gray-300 hover:text-white transition-all cursor-pointer"
             title="Alternar entre Manuscrito Completo e Esboço Condensado"
           >
             <AlignLeft className="w-3.5 h-3.5 text-[#D4AF37]" />
-            <span className="hidden sm:inline">{viewDensity === 'full' ? 'Completo' : 'Esboço'}</span>
+            <span>{viewDensity === 'full' ? 'Completo' : 'Esboço'}</span>
           </button>
 
           {/* Font Controls (A- / A+) */}
           <div className="flex items-center bg-black/40 rounded-xl border border-white/10 p-0.5">
             <button
+              type="button"
               onClick={() => setFontSize((prev) => Math.max(18, prev - 2))}
               disabled={fontSize <= 18}
-              className="px-2.5 py-1 text-xs font-bold text-gray-300 hover:text-white disabled:opacity-30 cursor-pointer"
+              className="px-2 sm:px-2.5 py-1 text-xs font-bold text-gray-300 hover:text-white disabled:opacity-30 cursor-pointer"
               title="Diminuir Fonte (A-)"
             >
               A-
             </button>
             <span className="text-[11px] font-mono text-gray-400 px-1">{fontSize}px</span>
             <button
+              type="button"
               onClick={() => setFontSize((prev) => Math.min(40, prev + 2))}
               disabled={fontSize >= 40}
-              className="px-2.5 py-1 text-xs font-bold text-gray-300 hover:text-white disabled:opacity-30 cursor-pointer"
+              className="px-2 sm:px-2.5 py-1 text-xs font-bold text-gray-300 hover:text-white disabled:opacity-30 cursor-pointer"
               title="Aumentar Fonte (A+)"
             >
               A+
@@ -384,6 +404,7 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
           {/* Line Height & Font Family dropdown */}
           <div className="hidden lg:flex items-center gap-1">
             <button
+              type="button"
               onClick={() => setFontFamily(fontFamily === 'serif' ? 'sans' : 'serif')}
               className="px-2.5 py-1 text-xs font-bold rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 cursor-pointer"
               title="Alternar Tipografia (Serifada / Sem Serifa)"
@@ -392,6 +413,7 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
             </button>
 
             <button
+              type="button"
               onClick={() => setLineHeight(lineHeight === 1.8 ? 2.2 : lineHeight === 2.2 ? 1.5 : 1.8)}
               className="px-2 py-1 text-xs font-mono rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 cursor-pointer"
               title="Espaçamento entre Linhas"
@@ -405,8 +427,9 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
             {(['oled', 'warm', 'slate'] as const).map((t) => (
               <button
                 key={t}
+                type="button"
                 onClick={() => setThemeMode(t)}
-                className={`px-2 py-1 text-[10px] font-bold uppercase rounded-lg transition-all cursor-pointer ${
+                className={`px-1.5 sm:px-2 py-1 text-[10px] font-bold uppercase rounded-lg transition-all cursor-pointer ${
                   themeMode === t 
                     ? 'bg-[#D4AF37] text-black font-extrabold' 
                     : 'text-gray-400 hover:text-white'
@@ -420,21 +443,23 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
 
           {/* Fullscreen Button */}
           <button
+            type="button"
             onClick={toggleFullscreen}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white transition-all cursor-pointer"
+            className="p-1.5 sm:p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white transition-all cursor-pointer"
             title={isFullscreen ? "Sair da Tela Cheia" : "Modo Tela Cheia"}
           >
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </button>
 
-          {/* Close Pulpit Mode */}
+          {/* Desktop Close Pulpit Mode */}
           <button
+            type="button"
             onClick={onClose}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/40 text-red-300 hover:text-red-100 rounded-xl border border-red-500/30 text-xs font-bold transition-all cursor-pointer shadow-xs ml-1"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/40 text-red-300 hover:text-red-100 rounded-xl border border-red-500/30 text-xs font-bold transition-all cursor-pointer shadow-xs ml-1 shrink-0"
             title="Sair do Modo Púlpito (ESC)"
           >
             <X className="w-4 h-4" />
-            <span className="hidden sm:inline">Sair</span>
+            <span>Sair</span>
           </button>
 
         </div>
@@ -442,7 +467,7 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
 
       {/* 2. FLOATING QUICK SECTION NAVIGATION POPUP */}
       {showQuickIndex && (
-        <div className="absolute top-16 right-4 z-50 w-80 bg-[#161616] border border-[#333] rounded-2xl shadow-2xl p-4 text-xs space-y-2 animate-fade-in">
+        <div className="absolute top-[6.5rem] sm:top-16 right-3 left-3 sm:left-auto sm:right-4 z-50 sm:w-80 bg-[#161616] border border-[#333] rounded-2xl shadow-2xl p-4 text-xs space-y-2 animate-fade-in">
           <div className="flex justify-between items-center border-b border-gray-800 pb-2">
             <span className="font-bold text-[#D4AF37] uppercase tracking-wider text-[11px] flex items-center gap-1.5">
               <ListOrdered className="w-4 h-4" />

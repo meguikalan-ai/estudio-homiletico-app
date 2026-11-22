@@ -36,6 +36,7 @@ import {
 import { TheologicalChat } from './components/TheologicalChat';
 import { SermonLibraryCard } from './components/SermonLibraryModal';
 import { ThemeGeneratorPanel } from './components/ThemeGeneratorPanel';
+import { SermonHymnsSection } from './components/SermonHymnsSection';
 import { BIBLICAL_THEMES_BANK, CHRISTIAN_THEMATIC_CALENDAR, MOCK_STARTER_SERMONS } from './data/pastoralBank';
 import { normalizeCategoryKey, normalizeThemeCategory } from './utils/themeCategory';
 import { 
@@ -893,6 +894,7 @@ export default function App() {
     });
     parts.push({ id: 'conclusion', label: 'Conclusão' });
     parts.push({ id: 'appeal', label: 'Apelo' });
+    parts.push({ id: 'hymns', label: 'Hinos' });
     parts.push({ id: 'references', label: 'Referências' });
     return parts;
   };
@@ -904,6 +906,13 @@ export default function App() {
   useEffect(() => {
     setSelectedSermonId('');
   }, []);
+
+  // Sincronizar o hinário preferido do sermão carregado
+  useEffect(() => {
+    if (activeSermon?.hymns?.preferredHinario) {
+      setActiveWorkspaceHinario(activeSermon.hymns.preferredHinario);
+    }
+  }, [selectedSermonId]);
 
   // Auto save dirty sermons to Cloud Firestore without echoing remote snapshot updates
   useEffect(() => {
@@ -2984,44 +2993,116 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
                         </div>
 
                         {/* Tabbed Navigation Bar */}
-                        <div className="non-printable bg-[#FAF6EE] rounded-xl p-3 border border-[#E6E2DA] flex flex-wrap gap-1.5 items-center justify-center text-[11px] font-sans shadow-sm">
-                          <span className="font-bold text-[#5A5A40] mr-1">Seção Ativa:</span>
-                          {sermonParts.map((part) => {
-                            const isActive = currentPartId === part.id;
-                            let btnStyle = "bg-white text-gray-700 hover:bg-[#5A5A40]/10 border border-[#E6E2DA]";
-                            if (isActive) {
-                              btnStyle = "bg-[#5A5A40] text-white border border-[#5A5A40] shadow-sm";
-                            }
-                            if (part.id === 'appeal') {
-                              if (isActive) btnStyle = "bg-rose-800 text-white border border-rose-800 shadow-sm font-bold";
-                              else btnStyle = "bg-red-50 text-red-800 hover:bg-red-100 border border-red-200 font-bold";
-                            }
+                        <div className="non-printable bg-[#FAF6EE] rounded-xl p-3 border border-[#E6E2DA] flex flex-col gap-2.5 text-[11px] font-sans shadow-sm">
+                          <div className="flex flex-wrap gap-1.5 items-center justify-center">
+                            <span className="font-bold text-[#5A5A40] mr-1">Seção Ativa:</span>
+                            {sermonParts.map((part) => {
+                              const isActive = currentPartId === part.id;
+                              let btnStyle = "bg-white text-gray-700 hover:bg-[#5A5A40]/10 border border-[#E6E2DA]";
+                              if (isActive) {
+                                btnStyle = "bg-[#5A5A40] text-white border border-[#5A5A40] shadow-sm";
+                              }
+                              if (part.id === 'appeal') {
+                                if (isActive) btnStyle = "bg-rose-800 text-white border border-rose-800 shadow-sm font-bold";
+                                else btnStyle = "bg-red-50 text-red-800 hover:bg-red-100 border border-red-200 font-bold";
+                              } else if (part.id === 'hymns') {
+                                if (isActive) btnStyle = "bg-[#5A5A40] text-white border border-[#5A5A40] shadow-sm font-bold";
+                                else btnStyle = "bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200 font-bold";
+                              }
+                              return (
+                                <button 
+                                  key={part.id}
+                                  type="button"
+                                  onClick={() => setActiveSermonPart(part.id)}
+                                  className={`font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 ${btnStyle}`}
+                                >
+                                  {part.id === 'hymns' && <Music className="w-3.5 h-3.5 shrink-0" />}
+                                  <span>{part.label}</span>
+                                </button>
+                              );
+                            })}
+                            
+                            {/* Inline Add Point Button */}
+                            <button
+                              onClick={() => {
+                                const newPIdx = activeSermon.expositoryPoints.length;
+                                const newP = [...activeSermon.expositoryPoints, { title: `Ponto ${newPIdx + 1}`, explanation: 'Clareie o texto bíblico com profundidade exegética...', application: 'Aplique de forma prática...' }];
+                                updateActiveSermonField('expositoryPoints', newP);
+                                setActiveSermonPart(`point-${newPIdx}`);
+                              }}
+                              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold px-3 py-1.5 rounded-lg border border-emerald-200 text-xs flex items-center gap-1 shrink-0 cursor-pointer ml-1"
+                              type="button"
+                              title="Adicionar Novo Tópico Expositivo"
+                            >
+                              <span>+ Ponto</span>
+                            </button>
+                          </div>
+
+                          {/* Hinos Selecionados visíveis diretamente no card Seção Ativa */}
+                          {(() => {
+                            const hydratedHymns = hydrateHymnsIfLegacy(activeSermon.hymns);
+                            const quickMoments: Array<{ key: 'abertura' | 'antesMensagem' | 'apelo' | 'encerramento'; label: string }> = [
+                              { key: 'abertura', label: 'Abertura' },
+                              { key: 'antesMensagem', label: 'Antes da Mensagem' },
+                              { key: 'apelo', label: 'Apelo' },
+                              { key: 'encerramento', label: 'Encerramento' }
+                            ];
+
                             return (
-                              <button 
-                                key={part.id}
-                                type="button"
-                                onClick={() => setActiveSermonPart(part.id)}
-                                className={`font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer ${btnStyle}`}
-                              >
-                                {part.label}
-                              </button>
+                              <div className="border-t border-[#E6E2DA] pt-2.5 flex flex-col gap-2">
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#5A5A40]">
+                                    <Music className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                                    <span>Hinos Selecionados ({activeWorkspaceHinario === 'AMBOS' ? 'CC / HCC' : activeWorkspaceHinario}):</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveSermonPart('hymns')}
+                                    className="text-[11px] font-bold text-[#5A5A40] hover:text-[#2D2926] underline cursor-pointer"
+                                  >
+                                    {currentPartId === 'hymns' ? 'Exibindo letras completas abaixo' : 'Abrir letras completas dos hinos'}
+                                  </button>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5">
+                                  {quickMoments.map(({ key, label }) => {
+                                    const primary = hydratedHymns.details?.[key];
+                                    const alternate = hydratedHymns.alternateDetails?.[key];
+                                    const selected =
+                                      (activeWorkspaceHinario !== 'AMBOS' && primary?.hinario === activeWorkspaceHinario
+                                        ? primary
+                                        : activeWorkspaceHinario !== 'AMBOS' && alternate?.hinario === activeWorkspaceHinario
+                                        ? alternate
+                                        : primary) || primary;
+                                    if (!selected) return null;
+
+                                    return (
+                                      <button
+                                        key={key}
+                                        type="button"
+                                        onClick={() => setLyricsModalHymn(selected)}
+                                        title={`Clique para ler a letra completa de ${selected.hinario} ${selected.number} — ${selected.title}`}
+                                        className="text-left bg-white hover:bg-amber-50/70 border border-[#E6E2DA] hover:border-amber-300 rounded-lg px-2.5 py-1.5 transition-all cursor-pointer group"
+                                      >
+                                        <div className="flex items-center justify-between gap-1">
+                                          <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">
+                                            {label}
+                                          </span>
+                                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-black ${
+                                            selected.hinario === 'CC' ? 'bg-[#5A5A40] text-white' : 'bg-amber-800 text-white'
+                                          }`}>
+                                            {selected.hinario} {selected.number}
+                                          </span>
+                                        </div>
+                                        <p className="text-[11px] font-serif font-semibold text-gray-900 truncate mt-0.5 group-hover:text-amber-950">
+                                          {selected.title}
+                                        </p>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
                             );
-                          })}
-                          
-                          {/* Inline Add Point Button */}
-                          <button
-                            onClick={() => {
-                              const newPIdx = activeSermon.expositoryPoints.length;
-                              const newP = [...activeSermon.expositoryPoints, { title: `Ponto ${newPIdx + 1}`, explanation: 'Clareie o texto bíblico com profundidade exegética...', application: 'Aplique de forma prática...' }];
-                              updateActiveSermonField('expositoryPoints', newP);
-                              setActiveSermonPart(`point-${newPIdx}`);
-                            }}
-                            className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold px-3 py-1.5 rounded-lg border border-emerald-200 text-xs flex items-center gap-1 shrink-0 cursor-pointer ml-1"
-                            type="button"
-                            title="Adicionar Novo Tópico Expositivo"
-                          >
-                            <span>+ Ponto</span>
-                          </button>
+                          })()}
                         </div>
 
                         {/* Title preview in workspace above the active clean page */}
@@ -3445,6 +3526,22 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
                                 </div>
                               </div>
                             </div>
+                          )}
+
+                          {currentPartId === 'hymns' && (
+                            <SermonHymnsSection
+                              hymns={activeSermon.hymns}
+                              activeHinario={activeWorkspaceHinario}
+                              onChangeHinario={setActiveWorkspaceHinario}
+                              copiedId={hymnCopiedId}
+                              onCopyHymn={(hymn, copyKey) => {
+                                const payload = `${hymn.hinario} ${hymn.number} — ${hymn.title} (${hymn.hinarioName})\nAutor: ${hymn.author}\nTema: ${hymn.theme}\n\n${hymn.fullLyrics}`;
+                                navigator.clipboard.writeText(payload);
+                                setHymnCopiedId(copyKey);
+                                setTimeout(() => setHymnCopiedId(null), 2500);
+                              }}
+                              onOpenLyricsModal={(hymn) => setLyricsModalHymn(hymn)}
+                            />
                           )}
                         </div>
 

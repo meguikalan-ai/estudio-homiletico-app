@@ -765,7 +765,7 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
           message: textToSend,
           chatHistory
         },
-        { retries: 2, timeoutMs: 45000 }
+        { retries: 1, timeoutMs: 85000 }
       );
 
       if (data.fallbackActive) {

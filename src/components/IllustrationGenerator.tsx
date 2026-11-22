@@ -312,7 +312,7 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
           scripture: formData.scripture.trim() || undefined,
           pastoralFocus: formData.pastoralFocus
         },
-        { retries: 2, timeoutMs: 45000 }
+        { retries: 1, timeoutMs: 85000 }
       );
 
       let createdIll: VisualIllustration | null = null;

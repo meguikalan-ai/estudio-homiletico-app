@@ -283,7 +283,7 @@ export const TheologicalSieve: React.FC<TheologicalSieveProps> = ({
           mainPoints: payloadPoints,
           outlineText: payloadPoints
         },
-        { retries: 2, timeoutMs: 45000 }
+        { retries: 1, timeoutMs: 85000 }
       );
       
       if (data.fallbackActive) {

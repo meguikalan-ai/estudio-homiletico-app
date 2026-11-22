@@ -1210,7 +1210,7 @@ export default function App() {
         churchProfileDetails,
         duration: sermonDuration,
         theologicalNotes: theologicalNotes.trim() || undefined
-      }, { retries: 1, timeoutMs: 95000 });
+      }, { retries: 1, timeoutMs: 105000 });
     } catch (err) {
       console.warn("[handleGenerateSermon] Falha de rede ou timeout com a API remota. Ativando contingência homilética estruturada:", err);
       // Fallback de contingência local: garante que o pastor nunca fique bloqueado sem sermão
@@ -1355,7 +1355,7 @@ export default function App() {
       const data: any = await safeApiPost('/api/gemini/generate-illustrations', {
         topic: `${point.title} (${activeSermon.title})`,
         type
-      }, { retries: 2, timeoutMs: 30000 });
+      }, { retries: 1, timeoutMs: 85000 });
 
       if (data && data.illustrations && data.illustrations.length > 0) {
         const suggestion = data.illustrations[0];
@@ -1443,7 +1443,7 @@ export default function App() {
     try {
       const data: any = await safeApiPost('/api/gemini/evaluate-sermon', {
         sermon: activeSermon
-      }, { retries: 2, timeoutMs: 35000 });
+      }, { retries: 1, timeoutMs: 85000 });
       
       if (data?.fallbackActive) {
         setApiFallbackNotice(data.fallbackReason);
@@ -1467,7 +1467,7 @@ export default function App() {
       const data: any = await safeApiPost('/api/gemini/improve-sermon', {
         sermon: activeSermon,
         improvement
-      }, { retries: 2, timeoutMs: 35000 });
+      }, { retries: 1, timeoutMs: 85000 });
 
       if (data?.fallbackActive) {
         setApiFallbackNotice(data.fallbackReason);
@@ -1517,7 +1517,7 @@ export default function App() {
         scripture: exegesisScripture,
         question: exegesisQuestion,
         chatHistory: [] // Can append more if needed
-      }, { retries: 2, timeoutMs: 35000 });
+      }, { retries: 1, timeoutMs: 85000 });
       
       if (data?.fallbackActive) {
         setApiFallbackNotice(data.fallbackReason);
@@ -1544,7 +1544,7 @@ export default function App() {
     try {
       const data: any = await safeApiPost('/api/gemini/explore-pericope', {
         scripture: targetScripture
-      }, { retries: 2, timeoutMs: 35000 });
+      }, { retries: 1, timeoutMs: 85000 });
       
       if (data?.fallbackActive) {
         setApiFallbackNotice(data.fallbackReason);
@@ -1566,7 +1566,7 @@ export default function App() {
     try {
       const data: any = await safeApiPost('/api/gemini/compare-versions', {
         scripture: comparedScripture
-      }, { retries: 2, timeoutMs: 35000 });
+      }, { retries: 1, timeoutMs: 85000 });
       
       if (data?.fallbackActive) {
         setApiFallbackNotice(data.fallbackReason);
@@ -1590,7 +1590,7 @@ export default function App() {
         theme: seriesTheme,
         campaign: seriesCampaign,
         sermonCount: seriesSermonCount
-      }, { retries: 2, timeoutMs: 45000 });
+      }, { retries: 1, timeoutMs: 85000 });
       
       if (data?.fallbackActive) {
         setApiFallbackNotice(data.fallbackReason);

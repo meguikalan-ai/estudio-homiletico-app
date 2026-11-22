@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -38,51 +38,67 @@ async function generateJSON(params: {
   responseSchema?: any;
   customModel?: string;
   temperature?: number;
+  thinkingLevel?: ThinkingLevel;
+  timeoutMs?: number;
 }): Promise<any> {
   if (!ai) {
     throw new Error("Gemini API Client not initialized (Simulation mode).");
   }
 
-  const primaryModel = params.customModel || "gemini-3.1-flash-lite";
-  // Dynamic fallback models in sequence using active Gemini 3.1 / 4 models
-  const modelsToTry = [primaryModel, "gemini-3.1-flash-lite", "gemini-4-hydrogen"].filter(
+  const primaryModel = params.customModel || "gemini-4-hydrogen";
+  // Dynamic fallback models in sequence using active Gemini 4 / 3.1 models
+  const modelsToTry = [primaryModel, "gemini-4-hydrogen", "gemini-3.1-flash-lite"].filter(
     (m, idx, arr) => arr.indexOf(m) === idx
   );
-
-  const config: any = {
-    responseMimeType: "application/json",
-    temperature: params.temperature ?? 0.85,
-  };
-  if (params.systemInstruction) {
-    config.systemInstruction = params.systemInstruction;
-  }
-  if (params.responseSchema) {
-    config.responseSchema = params.responseSchema;
-  }
 
   let lastError: any = null;
 
   for (let i = 0; i < modelsToTry.length; i++) {
     const currentModel = modelsToTry[i];
+    const isGemini4Model = currentModel.startsWith("gemini-4-");
     const maxRetriesForModel = 1;
     let attempt = 0;
 
     while (attempt < maxRetriesForModel) {
       try {
         console.log(`[generateJSON] Attempting API call with model (${i + 1}/${modelsToTry.length}): ${currentModel}`);
-        
-        // Timeout de segurança de 55s por tentativa para suportar sermões robustos de 40-60min sem travar o cliente
+
+        const controller = new AbortController();
+        const attemptTimeoutMs = params.timeoutMs ?? (i === 0 ? 45000 : 30000);
+        const timeoutSeconds = Math.round(attemptTimeoutMs / 1000);
+
+        const modelConfig: any = {
+          responseMimeType: "application/json",
+          abortSignal: controller.signal,
+        };
+        if (params.systemInstruction) {
+          modelConfig.systemInstruction = params.systemInstruction;
+        }
+        if (params.responseSchema) {
+          modelConfig.responseSchema = params.responseSchema;
+        }
+        if (isGemini4Model) {
+          // Gemini 4 models prohibit sampling params (temperature/topP/topK) and support ThinkingLevel.LOW for fast JSON output
+          modelConfig.thinkingConfig = {
+            thinkingLevel: params.thinkingLevel ?? ThinkingLevel.LOW,
+          };
+        } else {
+          modelConfig.temperature = params.temperature ?? 0.85;
+        }
+
+        // Timeout de segurança com cancelamento efetivo da requisição via AbortController
         let timerId: NodeJS.Timeout | null = null;
         const timeoutPromise = new Promise<never>((_, reject) => {
           timerId = setTimeout(() => {
-            reject(new Error(`Timeout na chamada do modelo ${currentModel} após 55s.`));
-          }, 55000);
+            controller.abort();
+            reject(new Error(`Timeout na chamada do modelo ${currentModel} após ${timeoutSeconds}s.`));
+          }, attemptTimeoutMs);
         });
 
         const callPromise = ai.models.generateContent({
           model: currentModel,
           contents: params.contents,
-          config,
+          config: modelConfig,
         });
 
         let response: any;

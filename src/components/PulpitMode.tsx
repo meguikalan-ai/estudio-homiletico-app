@@ -29,6 +29,11 @@ import {
 } from 'lucide-react';
 import { Sermon, DetailedHymn } from '../types';
 import { hydrateHymnsIfLegacy } from '../hymnsData';
+import {
+  formatRomanPointTitle,
+  structureExpositoryPoint,
+  splitInlineRomanLead
+} from '../utils/sermonPointFormatting';
 
 interface PulpitModeProps {
   sermon: Sermon;
@@ -204,7 +209,15 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
       cardBg: 'bg-[#141414] border border-[#262626]',
       accentColor: 'text-[#D4AF37]',
       accentBg: 'bg-[#D4AF37]/15 border-[#D4AF37]/30 text-[#D4AF37]',
-      transitionBg: 'bg-[#1C1811] border-[#4A3D22] text-[#F3EFE6]'
+      transitionBg: 'bg-[#1C1811] border-[#4A3D22] text-[#F3EFE6]',
+      illustrationBox: 'bg-amber-950/25 border border-amber-500/30 text-amber-100',
+      illustrationLabel: 'text-amber-300',
+      illustrationIcon: 'text-amber-400',
+      illustrationText: 'text-amber-50/90',
+      applicationBox: 'bg-emerald-950/25 border border-emerald-500/30 text-emerald-100',
+      applicationLabel: 'text-emerald-300',
+      applicationIcon: 'text-emerald-400',
+      applicationText: 'text-emerald-50/90'
     },
     warm: {
       bg: 'bg-[#141210]',
@@ -214,7 +227,15 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
       cardBg: 'bg-[#211E1A] border border-[#38332D]',
       accentColor: 'text-[#E5B566]',
       accentBg: 'bg-[#E5B566]/15 border-[#E5B566]/30 text-[#E5B566]',
-      transitionBg: 'bg-[#29221B] border-[#57432E] text-[#FAF5E8]'
+      transitionBg: 'bg-[#29221B] border-[#57432E] text-[#FAF5E8]',
+      illustrationBox: 'bg-[#292115] border border-[#6E5329]/60 text-[#FAF0DC]',
+      illustrationLabel: 'text-[#E5B566]',
+      illustrationIcon: 'text-[#E5B566]',
+      illustrationText: 'text-[#FAF5E8]/90',
+      applicationBox: 'bg-[#19231D] border border-emerald-600/35 text-[#ECF7F0]',
+      applicationLabel: 'text-emerald-300',
+      applicationIcon: 'text-emerald-400',
+      applicationText: 'text-[#EAF5EE]/90'
     },
     slate: {
       bg: 'bg-[#0F172A]',
@@ -224,7 +245,15 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
       cardBg: 'bg-[#1E293B] border border-[#334155]',
       accentColor: 'text-[#38BDF8]',
       accentBg: 'bg-[#38BDF8]/15 border-[#38BDF8]/30 text-[#38BDF8]',
-      transitionBg: 'bg-[#1E293B] border-[#0284C7]/50 text-[#F1F5F9]'
+      transitionBg: 'bg-[#1E293B] border-[#0284C7]/50 text-[#F1F5F9]',
+      illustrationBox: 'bg-amber-950/30 border border-amber-400/30 text-amber-100',
+      illustrationLabel: 'text-amber-300',
+      illustrationIcon: 'text-amber-400',
+      illustrationText: 'text-slate-100/90',
+      applicationBox: 'bg-teal-950/35 border border-teal-400/30 text-teal-100',
+      applicationLabel: 'text-teal-300',
+      applicationIcon: 'text-teal-400',
+      applicationText: 'text-slate-100/90'
     }
   }[themeMode];
 
@@ -505,7 +534,7 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
                 onClick={() => scrollToSection(`pulpit-point-${idx}`)}
                 className="w-full text-left p-2 rounded-lg hover:bg-white/10 text-[#D4AF37] transition-all font-semibold"
               >
-                Tópico {idx + 1}: {pt.title || `Ponto ${idx + 1}`}
+                {formatRomanPointTitle(pt.title, idx)}
               </button>
             ))}
             <button
@@ -607,78 +636,133 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
 
           {/* Section: Expository Points */}
           <div className="space-y-16">
-            {sermon.expositoryPoints.map((point, index) => (
-              <section 
-                key={index} 
-                id={`pulpit-point-${index}`}
-                className="space-y-6 pt-4"
-              >
-                {/* Preceding Transition Bridge (Crucial for Pulpit Delivery) */}
-                {point.precedingTransition && (
-                  <div className={`p-4 rounded-xl ${themeStyles.transitionBg} border flex items-start gap-3`}>
-                    <span className="text-xs font-mono font-bold uppercase px-2 py-0.5 rounded bg-black/40 text-[#D4AF37] shrink-0 mt-0.5">
-                      Ponte
-                    </span>
-                    <p className="text-[0.85em] italic font-sans leading-relaxed text-gray-200">
-                      "{point.precedingTransition}"
-                    </p>
-                  </div>
-                )}
+            {sermon.expositoryPoints.map((point, index) => {
+              const {
+                romanTitle,
+                explanationParagraphs,
+                applicationParagraphs
+              } = structureExpositoryPoint(point, index);
 
-                {/* Point Header */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3">
-                    <span className="w-8 h-8 rounded-xl bg-[#D4AF37] text-black font-extrabold text-sm flex items-center justify-center font-mono shrink-0 shadow-md">
-                      {index + 1}
-                    </span>
-                    <h2 
-                      className={`font-serif font-bold ${themeStyles.accentColor}`}
-                      style={{ fontSize: `${Math.round(fontSize * 1.25)}px`, lineHeight: 1.3 }}
-                    >
-                      {point.title}
-                    </h2>
-                  </div>
-                </div>
-
-                {/* Explanation / Exegesis (Shown in full view density) */}
-                {viewDensity === 'full' && point.explanation && (
-                  <div className="space-y-4 whitespace-pre-line leading-relaxed pl-2 border-l-2 border-white/10 sm:pl-4">
-                    {point.explanation}
-                  </div>
-                )}
-
-                {/* Illustration Block (Highlighted) */}
-                {point.illustration && point.illustration.description && (
-                  <div className="p-5 rounded-2xl bg-amber-950/25 border border-amber-500/30 text-amber-100 space-y-2 font-sans">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-amber-400" />
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-amber-300">
-                        Ilustração {point.illustration.type.toUpperCase()}
+              return (
+                <section
+                  key={index}
+                  id={`pulpit-point-${index}`}
+                  className="space-y-6 pt-4"
+                >
+                  {/* Preceding Transition Bridge (Crucial for Pulpit Delivery) */}
+                  {point.precedingTransition && (
+                    <div className={`p-4 rounded-xl ${themeStyles.transitionBg} border flex items-start gap-3`}>
+                      <span className="text-xs font-mono font-bold uppercase px-2 py-0.5 rounded bg-black/40 text-[#D4AF37] shrink-0 mt-0.5">
+                        Ponte
                       </span>
+                      <p className="text-[0.85em] italic font-sans leading-relaxed text-gray-200">
+                        "{point.precedingTransition}"
+                      </p>
                     </div>
-                    <p className="text-[0.9em] leading-relaxed text-amber-50/90 font-serif">
-                      {point.illustration.description}
-                    </p>
-                  </div>
-                )}
+                  )}
 
-                {/* Application Block */}
-                {point.application && (
-                  <div className="p-5 rounded-2xl bg-emerald-950/25 border border-emerald-500/30 text-emerald-100 space-y-2 font-sans">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-300">
-                        Aplicação Pastoral Direta
-                      </span>
+                  {viewDensity === 'outline' ? (
+                    <div className="space-y-4">
+                      <h2
+                        className={`font-serif font-bold ${themeStyles.accentColor}`}
+                        style={{ fontSize: `${Math.round(fontSize * 1.2)}px`, lineHeight: 1.35 }}
+                      >
+                        {romanTitle}
+                      </h2>
+
+                      {point.illustration && point.illustration.description && (
+                        <div className={`p-4 rounded-2xl ${themeStyles.illustrationBox} space-y-2 font-sans`}>
+                          <div className="flex items-center gap-2">
+                            <Sparkles className={`w-4 h-4 ${themeStyles.illustrationIcon}`} />
+                            <span className={`text-[11px] font-bold uppercase tracking-wider ${themeStyles.illustrationLabel}`}>
+                              Ilustração {point.illustration.type.toUpperCase()}
+                            </span>
+                          </div>
+                          <p className={`text-[0.9em] leading-relaxed ${themeStyles.illustrationText} ${fontFamily === 'serif' ? 'font-serif' : 'font-sans'}`}>
+                            {point.illustration.description}
+                          </p>
+                        </div>
+                      )}
+
+                      {applicationParagraphs.length > 0 && (
+                        <div className={`p-4 rounded-2xl ${themeStyles.applicationBox} space-y-2 font-sans`}>
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className={`w-4 h-4 ${themeStyles.applicationIcon}`} />
+                            <span className={`text-[11px] font-bold uppercase tracking-wider ${themeStyles.applicationLabel}`}>
+                              APLICAÇÃO
+                            </span>
+                          </div>
+                          <div className={`space-y-2 text-[0.9em] leading-relaxed ${themeStyles.applicationText} ${fontFamily === 'serif' ? 'font-serif' : 'font-sans'}`}>
+                            {applicationParagraphs.map((appPara, aIdx) => (
+                              <p key={`outline-app-${aIdx}`}>{appPara}</p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <p className="whitespace-pre-line text-[0.9em] leading-relaxed text-emerald-50/90 font-serif">
-                      {point.application}
-                    </p>
-                  </div>
-                )}
+                  ) : (
+                    <div className="space-y-5 leading-relaxed pl-2 border-l-2 border-white/10 sm:pl-4">
+                      {/* Integrated Continuous Expository Flow: I. Título - Primeiro parágrafo... */}
+                      {explanationParagraphs.map((para, pIdx) => {
+                        if (pIdx === 0) {
+                          const { leadTitle, separator, body } = splitInlineRomanLead(para);
+                          if (leadTitle) {
+                            return (
+                              <p key={pIdx} className="leading-relaxed">
+                                <span className={`font-serif font-bold ${themeStyles.accentColor}`}>
+                                  {leadTitle}
+                                </span>
+                                <span className={`font-bold ${themeStyles.accentColor}`}>
+                                  {separator}
+                                </span>
+                                {body}
+                              </p>
+                            );
+                          }
+                        }
+                        return (
+                          <p key={pIdx} className="leading-relaxed">
+                            {para}
+                          </p>
+                        );
+                      })}
 
-              </section>
-            ))}
+                      {/* Illustration Block (Highlighted) */}
+                      {point.illustration && point.illustration.description && (
+                        <div className={`p-5 rounded-2xl ${themeStyles.illustrationBox} space-y-2 font-sans my-2`}>
+                          <div className="flex items-center gap-2">
+                            <Sparkles className={`w-4 h-4 ${themeStyles.illustrationIcon}`} />
+                            <span className={`text-[11px] font-bold uppercase tracking-wider ${themeStyles.illustrationLabel}`}>
+                              Ilustração {point.illustration.type.toUpperCase()}
+                            </span>
+                          </div>
+                          <p className={`text-[0.9em] leading-relaxed ${themeStyles.illustrationText} ${fontFamily === 'serif' ? 'font-serif' : 'font-sans'}`}>
+                            {point.illustration.description}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Highlighted Application Block matching Illustration Box */}
+                      {applicationParagraphs.length > 0 && (
+                        <div className={`p-5 rounded-2xl ${themeStyles.applicationBox} space-y-2.5 font-sans my-2`}>
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className={`w-4 h-4 ${themeStyles.applicationIcon}`} />
+                            <span className={`text-[11px] font-bold uppercase tracking-wider ${themeStyles.applicationLabel}`}>
+                              APLICAÇÃO
+                            </span>
+                          </div>
+                          <div className={`space-y-2.5 text-[0.9em] leading-relaxed ${themeStyles.applicationText} ${fontFamily === 'serif' ? 'font-serif' : 'font-sans'}`}>
+                            {applicationParagraphs.map((appPara, aIdx) => (
+                              <p key={`app-${aIdx}`}>{appPara}</p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
           </div>
 
           {/* Section: Conclusion & Appeal */}

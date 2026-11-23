@@ -42,6 +42,15 @@ import { ThemeGeneratorPanel } from './components/ThemeGeneratorPanel';
 import { SermonHymnsSection } from './components/SermonHymnsSection';
 import { BIBLICAL_THEMES_BANK, CHRISTIAN_THEMATIC_CALENDAR, MOCK_STARTER_SERMONS } from './data/pastoralBank';
 import { normalizeCategoryKey, normalizeThemeCategory } from './utils/themeCategory';
+import {
+  formatRomanPointTitle,
+  structureExpositoryPoint,
+  formatCleanApplication,
+  stripLooseSubLabels,
+  normalizeExpositoryPoint,
+  splitInlineRomanLead,
+  toRomanNumeral
+} from './utils/sermonPointFormatting';
 import { 
   saveSermonToCloud, 
   deleteSermonFromCloud, 
@@ -1296,9 +1305,10 @@ export default function App() {
         scripture: data?.scripture || scriptureInput,
         introduction: data?.introduction || 'Introdução do sermão',
         biblicalContext: data?.biblicalContext || 'Contexto bíblico',
-        expositoryPoints: data?.expositoryPoints || [
-          { title: 'I. Ponto expositivo Inicial', explanation: 'Nova elucidação bíblica' }
-        ],
+        expositoryPoints: (data?.expositoryPoints && data.expositoryPoints.length > 0
+          ? data.expositoryPoints
+          : [{ title: 'I. Exposição Inicial', explanation: 'I. Exposição Inicial - Nova elucidação bíblica do texto sagrado.' }]
+        ).map((pt: ExpositoryPoint, idx: number) => normalizeExpositoryPoint(pt, idx)),
         illustrations: data?.illustrations || [
           { type: 'bíblica', description: 'Narrativa das Escrituras inserida organicamente.' },
           { type: 'cotidiano', description: 'Exemplo do cotidiano correspondente.' }
@@ -1490,9 +1500,10 @@ export default function App() {
         scripture: data?.scripture || sourceSermon.scripture,
         introduction: data?.introduction || sourceSermon.introduction,
         biblicalContext: data?.biblicalContext || sourceSermon.biblicalContext,
-        expositoryPoints: (data?.expositoryPoints && data.expositoryPoints.length > 0)
+        expositoryPoints: ((data?.expositoryPoints && data.expositoryPoints.length > 0)
           ? data.expositoryPoints
-          : sourceSermon.expositoryPoints,
+          : sourceSermon.expositoryPoints
+        ).map((pt: ExpositoryPoint, idx: number) => normalizeExpositoryPoint(pt, idx)),
         illustrations: data?.illustrations || sourceSermon.illustrations,
         applications: data?.applications || sourceSermon.applications,
         conclusion: data?.conclusion || sourceSermon.conclusion,
@@ -1770,7 +1781,9 @@ export default function App() {
           scripture: data.scripture || s.scripture,
           introduction: data.introduction || s.introduction,
           biblicalContext: data.biblicalContext || s.biblicalContext,
-          expositoryPoints: data.expositoryPoints || s.expositoryPoints,
+          expositoryPoints: (data.expositoryPoints && data.expositoryPoints.length > 0)
+            ? data.expositoryPoints.map((pt, pIdx) => normalizeExpositoryPoint(pt, pIdx))
+            : s.expositoryPoints,
           conclusion: data.conclusion || s.conclusion,
           pastoralAppeal: data.pastoralAppeal || s.pastoralAppeal,
           updatedAt: Date.now()
@@ -2041,31 +2054,55 @@ export default function App() {
       console.warn("Iframe blocked window.print() execution.", e);
     }
 
+    const escapePrintHtml = (str: string) =>
+      str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
     // Direct download of gorgeous, styled printable HTML that prints flawlessly to PDF outside the sandbox
     const pPoints = activeSermon.expositoryPoints.map((p, idx) => {
-      // Limpa algarismos romanos estruturais (ex: "I. ", "II. ") no início do título para evitar duplicar numeração
-      const cleanedTitle = p.title.replace(/^(?:[IVXLCDM]+\.?\s+)/i, '').trim();
-      let pBlock = `
-        <div class="point-block" style="margin-top: 1.2rem; margin-bottom: 1.2rem; padding-bottom: 0.8rem; border-bottom: 1px dashed #E5E5E5; page-break-inside: auto; break-inside: auto;">
-          <h4 style="font-family: 'Georgia', serif; font-size: 15pt; font-weight: bold; margin-bottom: 0.5rem; color: #000000; line-height: 1.4;">3.${idx + 1}. ${cleanedTitle}</h4>
-          <p style="font-family: 'Georgia', serif; font-size: 13pt; line-height: 1.6; margin: 0 0 0.8rem 0; text-align: justify; white-space: pre-line;">${p.explanation}</p>
-      `;
+      const { explanationParagraphs, applicationParagraphs } = structureExpositoryPoint(p, idx);
+
+      let pBlock = `<div class="point-block" style="margin-top: 1.2rem; margin-bottom: 1.2rem; padding-bottom: 0.8rem; border-bottom: 1px dashed #E5E5E5; page-break-inside: auto; break-inside: auto;">`;
+
+      if (p.precedingTransition) {
+        pBlock += `
+          <p style="font-family: 'Inter', sans-serif; font-size: 10.5pt; font-style: italic; color: #5A5A40; border-left: 2px solid #D9B36C; padding-left: 10px; margin: 0 0 0.8rem 0;">${escapePrintHtml(p.precedingTransition)}</p>
+        `;
+      }
+
+      explanationParagraphs.forEach((para, paraIdx) => {
+        if (paraIdx === 0) {
+          const { leadTitle, separator, body } = splitInlineRomanLead(para);
+          if (leadTitle) {
+            pBlock += `<p style="font-family: 'Georgia', serif; font-size: 13pt; line-height: 1.65; margin: 0 0 0.8rem 0; text-align: justify;"><strong>${escapePrintHtml(leadTitle)}</strong>${escapePrintHtml(separator)}${escapePrintHtml(body).replace(/\n/g, '<br>')}</p>`;
+            return;
+          }
+        }
+        pBlock += `<p style="font-family: 'Georgia', serif; font-size: 13pt; line-height: 1.65; margin: 0 0 0.8rem 0; text-align: justify;">${escapePrintHtml(para).replace(/\n/g, '<br>')}</p>`;
+      });
+
       if (p.illustration && p.illustration.description) {
         pBlock += `
-          <div style="background-color: #FAF6EE; border-left: 3px solid #5A5A40; padding: 12px; margin: 12px 0; font-style: italic; font-size: 12pt; line-height: 1.5; page-break-inside: auto; break-inside: auto;">
-            <strong>Ilustração (${p.illustration.type === 'bíblica' ? 'Bíblica' : 'do Cotidiano'}):</strong><br>
-            ${p.illustration.description}
+          <div style="background-color: #FAF6EE; border: 1px solid #E6DCC5; border-radius: 8px; padding: 12px 14px; margin: 12px 0; font-style: italic; font-size: 12pt; line-height: 1.5; page-break-inside: auto; break-inside: auto;">
+            <div style="font-family: 'Inter', sans-serif; font-size: 9pt; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #8A5A19; font-style: normal; margin-bottom: 4px;">Ilustração ${p.illustration.type === 'bíblica' ? 'Bíblica' : 'Cotidiano'}</div>
+            <div>${escapePrintHtml(p.illustration.description).replace(/\n/g, '<br>')}</div>
           </div>
         `;
       }
-      if (p.application) {
+
+      if (applicationParagraphs.length > 0) {
         pBlock += `
-          <div style="background-color: #F5F7F8; border-left: 3px solid #4A5A5A; padding: 12px; margin: 12px 0; font-size: 12pt; line-height: 1.5; page-break-inside: auto; break-inside: auto;">
-            <strong>Aplicação Prática:</strong><br>
-            ${p.application}
+          <div style="background-color: #F2F7F4; border: 1px solid #CBE0D2; border-radius: 8px; padding: 12px 14px; margin: 12px 0; font-size: 12pt; line-height: 1.55; page-break-inside: auto; break-inside: auto;">
+            <div style="font-family: 'Inter', sans-serif; font-size: 9pt; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #245C3E; margin-bottom: 4px;">APLICAÇÃO</div>
+            ${applicationParagraphs
+              .map((appPara) => `<p style="font-family: 'Georgia', serif; font-size: 12pt; line-height: 1.55; margin: 0 0 0.5rem 0; text-align: justify; color: #1F2E25;">${escapePrintHtml(appPara).replace(/\n/g, '<br>')}</p>`)
+              .join('')}
           </div>
         `;
       }
+
       pBlock += `</div>`;
       return pBlock;
     }).join('');
@@ -2394,15 +2431,18 @@ ${activeSermon.biblicalContext}
 =======================================
 PONTOS EXPOSITIVOS:
 ${activeSermon.expositoryPoints.map((p, idx) => {
+  const { fullExplanation, application } = structureExpositoryPoint(p, idx);
   let pBlock = "";
   if (p.precedingTransition) {
     pBlock += `${p.precedingTransition}\n\n`;
   }
-  pBlock += `${p.title}\n${p.explanation}\n`;
-  if (p.illustration) {
-    pBlock += `Ilustração (${p.illustration.type}):\n${p.illustration.description}\n`;
+  pBlock += `${fullExplanation}\n`;
+  if (p.illustration && p.illustration.description) {
+    pBlock += `\nILUSTRAÇÃO (${p.illustration.type.toUpperCase()}):\n${p.illustration.description}\n`;
   }
-  pBlock += `Aplicação Prática:\n${p.application}\n`;
+  if (application) {
+    pBlock += `\nAPLICAÇÃO:\n${application}\n`;
+  }
   return pBlock;
 }).join('\n')}
  
@@ -2452,15 +2492,28 @@ ${activeSermon.biblicalContext}
 
 ## Desenvolvimento Expositivo
 ${activeSermon.expositoryPoints.map((p, idx) => {
+  const { explanationParagraphs, application } = structureExpositoryPoint(p, idx);
+  const formattedParagraphs = explanationParagraphs.map((para, paraIdx) => {
+    if (paraIdx === 0) {
+      const { leadTitle, separator, body } = splitInlineRomanLead(para);
+      if (leadTitle) {
+        return `**${leadTitle}**${separator}${body}`;
+      }
+    }
+    return para;
+  }).join('\n\n');
+
   let pBlock = "";
   if (p.precedingTransition) {
     pBlock += `_${p.precedingTransition}_\n\n`;
   }
-  pBlock += `### ${p.title}\n\n${p.explanation}\n`;
-  if (p.illustration) {
-    pBlock += `\n**Ilustração ${p.illustration.type === 'bíblica' ? 'Bíblica' : 'do Cotidiano'}:**\n_${p.illustration.description}_\n`;
+  pBlock += `${formattedParagraphs}\n`;
+  if (p.illustration && p.illustration.description) {
+    pBlock += `\n**ILUSTRAÇÃO ${p.illustration.type === 'bíblica' ? 'BÍBLICA' : 'COTIDIANO'}:**\n_${p.illustration.description}_\n`;
   }
-  pBlock += `\n**Aplicação Prática e Pastoral:**\n${p.application}\n`;
+  if (application) {
+    pBlock += `\n**APLICAÇÃO:**\n${application}\n`;
+  }
   return pBlock;
 }).join('\n---\n\n')}
 
@@ -3357,7 +3410,16 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
                             <button
                               onClick={() => {
                                 const newPIdx = activeSermon.expositoryPoints.length;
-                                const newP = [...activeSermon.expositoryPoints, { title: `Ponto ${newPIdx + 1}`, explanation: 'Clareie o texto bíblico com profundidade exegética...', application: 'Aplique de forma prática...' }];
+                                const roman = toRomanNumeral(newPIdx + 1);
+                                const defaultTitle = `${roman}. Novo Tópico Expositivo`;
+                                const newP = [
+                                  ...activeSermon.expositoryPoints,
+                                  {
+                                    title: defaultTitle,
+                                    explanation: `${defaultTitle} - Desenvolva a exposição contínua do texto bíblico integrando termos originais, paralelos escriturísticos e cristocentrismo em parágrafos fluidos.`,
+                                    application: 'Desenvolva a aplicação pastoral concreta em parágrafos contínuos.'
+                                  }
+                                ];
                                 updateActiveSermonField('expositoryPoints', newP);
                                 setActiveSermonPart(`point-${newPIdx}`);
                               }}
@@ -3485,11 +3547,15 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
                             const point = activeSermon.expositoryPoints[pIdx];
                             if (!point) return <p className="text-gray-500 italic">Ponto expositivo não encontrado.</p>;
                             const totalIllustrationsCount = activeSermon.expositoryPoints.reduce((acc, p) => acc + (p.illustration ? 1 : 0), 0);
+                            const romanDisplayTitle = formatRomanPointTitle(point.title, pIdx);
+                            const cleanExplanationValue = stripLooseSubLabels(point.explanation);
+                            const cleanApplicationValue = formatCleanApplication(point.application);
+                            const structuredPreview = structureExpositoryPoint(point, pIdx);
                             return (
                               <div className="space-y-6 animate-fadeIn">
                                 <div className="flex justify-between items-center border-b border-[#5A5A40]/15 pb-2">
                                   <h3 className={`font-sans uppercase tracking-widest font-extrabold ${isPreacherStyle ? 'text-sm text-amber-800' : 'text-xs text-[#5A5A40]'}`}>
-                                    Desenvolvimento Homilético Integrado / {point.title || `Ponto ${pIdx + 1}`}
+                                    Desenvolvimento Homilético Integrado / {romanDisplayTitle}
                                   </h3>
                                   <button
                                     onClick={() => {
@@ -3534,17 +3600,20 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
                                         updateActiveSermonField('expositoryPoints', updatedPoints);
                                       }}
                                       className={`w-full font-bold bg-transparent border-b border-gray-100 hover:border-gray-200 focus:border-[#5A5A40] focus:outline-none py-1 ${isPreacherStyle ? 'text-lg text-amber-900' : 'text-base text-gray-950 font-serif'}`}
-                                      placeholder="Título do Tópico..."
+                                      placeholder="I. Título do Tópico..."
                                     />
                                   </div>
 
                                   <div className="space-y-1">
                                     <label className="text-[10px] uppercase font-bold tracking-wider text-gray-500 block">
-                                      Exposição do Texto: (a) Explicação Textual & Termos Originais • (b) Paralelos Escriturísticos • (c) Cristocentrismo Redentor
+                                      Texto do Tópico (Exposição Contínua Integrada)
                                     </label>
+                                    <p className="text-[11px] text-gray-400 font-sans italic">
+                                      Inicie em &quot;{toRomanNumeral(pIdx + 1)}. Título - Primeiro parágrafo...&quot;, unindo exegese com termos originais, paralelos bíblicos e cristocentrismo em parágrafos fluidos, sem marcadores ou subtítulos.
+                                    </p>
                                     <textarea
                                       rows={10}
-                                      value={point.explanation}
+                                      value={cleanExplanationValue}
                                       onChange={(e) => {
                                         const updatedPoints = activeSermon.expositoryPoints.map((pt, idx) => 
                                           idx === pIdx ? { ...pt, explanation: e.target.value } : pt
@@ -3552,7 +3621,7 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
                                         updateActiveSermonField('expositoryPoints', updatedPoints);
                                       }}
                                       className="w-full bg-gray-50/50 border border-gray-100 focus:border-[#5A5A40] rounded-xl p-3 text-gray-800 leading-relaxed font-serif text-sm focus:ring-0 focus:outline-none resize-y min-h-[180px]"
-                                      placeholder="Exponha o texto bíblico com profundidade exegética: (a) Explicação Textual & Termos Originais no hebraico/grego, (b) Paralelos Escriturísticos canônicos, (c) Cristocentrismo Redentor no Cordeiro de Deus..."
+                                      placeholder={`${toRomanNumeral(pIdx + 1)}. Título do Tópico - Primeiro parágrafo com exposição textual, termos originais no hebraico/grego, paralelos bíblicos e convergência cristocêntrica em prosa contínua...`}
                                     />
                                   </div>
 
@@ -3670,21 +3739,76 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
                                   </div>
 
                                   <div className="space-y-1">
-                                    <label className="text-[10px] uppercase font-bold tracking-wider text-emerald-700 flex items-center gap-1">
-                                      🎯 (d) Aconselhamento, Confronto Pastoral & Aplicação Pós-Moderna
+                                    <label className="text-[10px] uppercase font-bold tracking-wider text-emerald-800 flex items-center gap-1">
+                                      Aplicação Pastoral (Parágrafos Contínuos)
                                     </label>
                                     <textarea
                                       rows={6}
-                                      value={point.application || ''}
+                                      value={cleanApplicationValue}
                                       onChange={(e) => {
                                         const updatedPoints = activeSermon.expositoryPoints.map((pt, idx) => 
                                           idx === pIdx ? { ...pt, application: e.target.value } : pt
                                         );
                                         updateActiveSermonField('expositoryPoints', updatedPoints);
                                       }}
-                                      className="w-full bg-white border border-emerald-100 focus:border-emerald-600 rounded-lg p-3 text-gray-800 leading-relaxed font-sans text-xs focus:ring-0 focus:outline-none resize-y min-h-[120px]"
-                                      placeholder="Como essa verdade confronta a ansiedade, o secularismo prático ou o individualismo moderno? Forneça aconselhamento bíblico maduro e passos práticos para o discipulado..."
+                                      className="w-full bg-white border border-emerald-100 focus:border-emerald-600 rounded-lg p-3 text-gray-800 leading-relaxed font-serif text-sm focus:ring-0 focus:outline-none resize-y min-h-[120px]"
+                                      placeholder="Desenvolva em parágrafos contínuos o confronto pastoral, o consolo e os passos práticos para a vida diária da igreja..."
                                     />
+                                  </div>
+
+                                  <div className="rounded-xl border border-[#E6E2DA] bg-[#FAF8F4] p-4 space-y-4">
+                                    <div className="text-[10px] font-sans font-bold uppercase tracking-wider text-[#5A5A40]">
+                                      Pré-visualização do Tópico (Formato Púlpito &amp; Impressão)
+                                    </div>
+                                    <div className="space-y-3 font-serif text-sm leading-relaxed text-[#2D2926]">
+                                      {structuredPreview.explanationParagraphs.map((para, paraIdx) => {
+                                        if (paraIdx === 0) {
+                                          const { leadTitle, separator, body } = splitInlineRomanLead(para);
+                                          if (leadTitle) {
+                                            return (
+                                              <p key={paraIdx} className="whitespace-pre-line">
+                                                <strong className="font-bold text-[#1F1D1B]">{leadTitle}</strong>
+                                                <span>{separator}</span>
+                                                {body}
+                                              </p>
+                                            );
+                                          }
+                                        }
+                                        return (
+                                          <p key={paraIdx} className="whitespace-pre-line">
+                                            {para}
+                                          </p>
+                                        );
+                                      })}
+
+                                      {point.illustration && point.illustration.description && (
+                                        <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-200/80 space-y-1.5 font-sans">
+                                          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                                            <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                                            <span>Ilustração {point.illustration.type.toUpperCase()}</span>
+                                          </div>
+                                          <p className="font-serif text-xs sm:text-sm leading-relaxed text-amber-950/90">
+                                            {point.illustration.description}
+                                          </p>
+                                        </div>
+                                      )}
+
+                                      {structuredPreview.applicationParagraphs.length > 0 && (
+                                        <div className="p-4 rounded-xl bg-emerald-50/75 border border-emerald-200/80 space-y-1.5 font-sans">
+                                          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                                            <span>APLICAÇÃO</span>
+                                          </div>
+                                          <div className="space-y-2 font-serif text-xs sm:text-sm leading-relaxed text-emerald-950/90">
+                                            {structuredPreview.applicationParagraphs.map((appPara, appIdx) => (
+                                              <p key={`app-prev-${appIdx}`} className="whitespace-pre-line">
+                                                {appPara}
+                                              </p>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -3903,25 +4027,62 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
 
                             <section className="space-y-4">
                               <h3 className="font-sans uppercase text-xs font-bold tracking-widest text-[#5A5A40] border-b border-gray-200 pb-1">3. Desenvolvimento Expositivo</h3>
-                              {activeSermon.expositoryPoints.map((point, idx) => (
-                                <div key={idx} className="space-y-2 p-4 bg-gray-50 border border-gray-100 rounded-lg">
-                                  {point.precedingTransition && (
-                                    <p className="text-xs italic text-[#5A5A40] border-l-2 border-amber-350 bg-amber-50/30 px-2 py-1 mb-2 font-sans leading-relaxed">
-                                      {point.precedingTransition}
-                                    </p>
-                                  )}
-                                  <h4 className="font-bold text-gray-950 font-serif text-sm">{idx + 1}. {point.title}</h4>
-                                  <p className="whitespace-pre-line text-xs text-gray-800 leading-relaxed font-serif">{point.explanation}</p>
-                                  {point.illustration && (
-                                    <p className="text-xs italic text-amber-900 mt-1 bg-amber-50/50 p-2 rounded border border-amber-100">
-                                      <strong>Ilustração ({point.illustration.type}):</strong> {point.illustration.description}
-                                    </p>
-                                  )}
-                                  <p className="whitespace-pre-line text-xs text-emerald-800 font-sans mt-1">
-                                    <strong>Aplicação:</strong> {point.application}
-                                  </p>
-                                </div>
-                              ))}
+                              {activeSermon.expositoryPoints.map((point, idx) => {
+                                const { explanationParagraphs, applicationParagraphs } = structureExpositoryPoint(point, idx);
+
+                                return (
+                                  <div key={idx} className="space-y-2.5 p-4 bg-gray-50 border border-gray-100 rounded-lg">
+                                    {point.precedingTransition && (
+                                      <p className="text-xs italic text-[#5A5A40] border-l-2 border-amber-350 bg-amber-50/30 px-2 py-1 mb-2 font-sans leading-relaxed">
+                                        {point.precedingTransition}
+                                      </p>
+                                    )}
+                                    {explanationParagraphs.map((para, paraIdx) => {
+                                      if (paraIdx === 0) {
+                                        const { leadTitle, separator, body } = splitInlineRomanLead(para);
+                                        if (leadTitle) {
+                                          return (
+                                            <p key={paraIdx} className="whitespace-pre-line text-xs text-gray-800 leading-relaxed font-serif">
+                                              <strong className="font-bold text-gray-950">{leadTitle}</strong>
+                                              <span>{separator}</span>
+                                              {body}
+                                            </p>
+                                          );
+                                        }
+                                      }
+                                      return (
+                                        <p key={paraIdx} className="whitespace-pre-line text-xs text-gray-800 leading-relaxed font-serif">
+                                          {para}
+                                        </p>
+                                      );
+                                    })}
+                                    {point.illustration && point.illustration.description && (
+                                      <div className="mt-1 bg-amber-50/70 p-2.5 rounded-lg border border-amber-200/80 space-y-1">
+                                        <div className="text-[10px] font-sans font-bold uppercase tracking-wider text-amber-800">
+                                          Ilustração {point.illustration.type.toUpperCase()}
+                                        </div>
+                                        <p className="text-xs italic text-amber-950 leading-relaxed font-serif">
+                                          {point.illustration.description}
+                                        </p>
+                                      </div>
+                                    )}
+                                    {applicationParagraphs.length > 0 && (
+                                      <div className="mt-1 bg-emerald-50/70 p-2.5 rounded-lg border border-emerald-200/80 space-y-1">
+                                        <div className="text-[10px] font-sans font-bold uppercase tracking-wider text-emerald-800">
+                                          APLICAÇÃO
+                                        </div>
+                                        <div className="space-y-1.5 text-xs text-emerald-950 leading-relaxed font-serif">
+                                          {applicationParagraphs.map((appPara, appIdx) => (
+                                            <p key={`print-app-${appIdx}`} className="whitespace-pre-line">
+                                              {appPara}
+                                            </p>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </section>
 
                             <section className="space-y-2">

@@ -31,8 +31,7 @@ import { Sermon, DetailedHymn } from '../types';
 import { hydrateHymnsIfLegacy } from '../hymnsData';
 import {
   formatRomanPointTitle,
-  structureExpositoryPoint,
-  splitInlineRomanLead
+  structureExpositoryPoint
 } from '../utils/sermonPointFormatting';
 
 interface PulpitModeProps {
@@ -702,30 +701,18 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
                     </div>
                   ) : (
                     <div className="space-y-5 leading-relaxed pl-2 border-l-2 border-white/10 sm:pl-4">
-                      {/* Integrated Continuous Expository Flow: I. Título - Primeiro parágrafo... */}
-                      {explanationParagraphs.map((para, pIdx) => {
-                        if (pIdx === 0) {
-                          const { leadTitle, separator, body } = splitInlineRomanLead(para);
-                          if (leadTitle) {
-                            return (
-                              <p key={pIdx} className="leading-relaxed">
-                                <span className={`font-serif font-bold ${themeStyles.accentColor}`}>
-                                  {leadTitle}
-                                </span>
-                                <span className={`font-bold ${themeStyles.accentColor}`}>
-                                  {separator}
-                                </span>
-                                {body}
-                              </p>
-                            );
-                          }
-                        }
-                        return (
-                          <p key={pIdx} className="leading-relaxed">
-                            {para}
-                          </p>
-                        );
-                      })}
+                      <h2
+                        className={`font-serif font-bold ${themeStyles.accentColor}`}
+                        style={{ fontSize: `${Math.round(fontSize * 1.2)}px`, lineHeight: 1.35 }}
+                      >
+                        {romanTitle}
+                      </h2>
+
+                      {explanationParagraphs.map((para, pIdx) => (
+                        <p key={pIdx} className="leading-relaxed">
+                          {para}
+                        </p>
+                      ))}
 
                       {/* Illustration Block (Highlighted) */}
                       {point.illustration && point.illustration.description && (

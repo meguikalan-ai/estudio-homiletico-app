@@ -88,6 +88,47 @@ export function splitEmbeddedApplication(rawExplanation: string): {
   };
 }
 
+/**
+ * Remove eventual prefixo repetindo o título romano seguido de hífen/dois-pontos/quebra
+ * no início do corpo da exposição (ex.: "I. Título - Primeiro parágrafo..."),
+ * mantendo o título isolado como cabeçalho próprio.
+ */
+export function stripLeadingTitleFromBody(title: string, body: string, index: number): string {
+  const romanTitle = formatRomanPointTitle(title, index);
+  const coreTitle = stripRomanOrNumericPrefix(romanTitle);
+  let result = (body || '').trim();
+  if (!result) return '';
+
+  const escapedCore = coreTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const existingHeaderRegex = new RegExp(
+    `^(?:(?:[IVXLCDM]+|\\d+)\\s*[.)\\-–—:]\\s*)?${escapedCore}\\s*(?:[-–—:]\\s*|\\n+)`,
+    'i'
+  );
+
+  if (existingHeaderRegex.test(result)) {
+    result = result.replace(existingHeaderRegex, '').trim();
+  } else {
+    const genericRomanPrefixRegex = /^(?:[IVXLCDM]+)\.\s+[^\n]{4,140}?\s+[-–—]\s+/;
+    const match = result.match(genericRomanPrefixRegex);
+    if (match) {
+      const candidateTitle = match[0]
+        .replace(/^(?:[IVXLCDM]+)\.\s+/, '')
+        .replace(/\s+[-–—]\s+$/, '')
+        .trim()
+        .toLowerCase();
+      if (
+        candidateTitle === coreTitle.toLowerCase() ||
+        coreTitle.toLowerCase().includes(candidateTitle) ||
+        candidateTitle.includes(coreTitle.toLowerCase())
+      ) {
+        result = result.slice(match[0].length).trim();
+      }
+    }
+  }
+
+  return result.replace(/^\n+/, '').trim();
+}
+
 const ABBREVIATIONS_REGEX =
   /(?:^|\s)(?:v|vv|cap|cf|ex|p\.ex|etc|obs|art|dr|pr|sr|sra|sl|jo|mt|mc|lc|at|rm|co|gl|ef|fp|cl|ts|tm|tt|fm|hb|tg|pe|jd|ap|gn|êx|lv|nm|dt|js|jz|rt|sm|rs|cr|ed|ne|et|pv|ec|ct|is|jr|lm|ez|dn|os|jl|am|ob|jn|mq|na|hc|sf|ag|zc|ml|\d+|[ivxlcdm]+)\.\s*$/i;
 
@@ -97,7 +138,7 @@ const TRANSITION_CUE_REGEX =
 /**
  * Divide o texto expositivo em parágrafos fluidos e legíveis.
  * Preserva quebras de parágrafo existentes (`\n` ou `\n\n`) e, apenas quando
- * um bloco único excede 680 caracteres sem quebras, reparte em fronteiras de frase naturais.
+ * um bloco único excede 520 caracteres sem quebras, reparte em fronteiras de frase naturais.
  */
 export function splitFluentParagraphs(text: string): string[] {
   const initial = (text || '')
@@ -225,7 +266,8 @@ export interface StructuredExpositoryPoint {
 /**
  * Estrutura completa de um ponto expositivo:
  * - Limpa marcadores (a)-(d) e rótulos soltos;
- * - Integra `I. Título - Primeiro parágrafo...` sem duplicar cabeçalhos;
+ * - Mantém `romanTitle` isolado como cabeçalho próprio da divisão;
+ * - Remove eventual junção `I. Título - ` do início do corpo expositivo;
  * - Mantém o corpo expositivo em parágrafos fluidos;
  * - Extrai / isola a aplicação pastoral para exibição na caixa destacada `APLICAÇÃO`
  *   sem duplicá-la no corpo corrido.
@@ -235,7 +277,6 @@ export function structureExpositoryPoint(
   index: number
 ): StructuredExpositoryPoint {
   const romanTitle = formatRomanPointTitle(point.title, index);
-  const coreTitle = stripRomanOrNumericPrefix(romanTitle);
 
   const { explanationBody, extractedApplication } = splitEmbeddedApplication(point.explanation || '');
   const cleanedExpl = stripLooseSubLabels(explanationBody);
@@ -252,39 +293,8 @@ export function structureExpositoryPoint(
     }
   }
 
-  let bodyWithoutLeadingTitle = cleanedExpl;
-  if (bodyWithoutLeadingTitle) {
-    const escapedCore = coreTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const existingHeaderRegex = new RegExp(
-      `^(?:(?:[IVXLCDM]+|\\d+)\\s*[.)\\-–—:]\\s*)?${escapedCore}\\s*(?:[-–—:]\\s*|\\n+)`,
-      'i'
-    );
-
-    if (existingHeaderRegex.test(bodyWithoutLeadingTitle)) {
-      bodyWithoutLeadingTitle = bodyWithoutLeadingTitle.replace(existingHeaderRegex, '').trim();
-    } else {
-      const genericRomanPrefixRegex = /^(?:[IVXLCDM]+)\.\s+[^\n]{4,110}?\s+[-–—]\s+/;
-      const match = bodyWithoutLeadingTitle.match(genericRomanPrefixRegex);
-      if (match) {
-        const candidateTitle = match[0]
-          .replace(/^(?:[IVXLCDM]+)\.\s+/, '')
-          .replace(/\s+[-–—]\s+$/, '')
-          .trim()
-          .toLowerCase();
-        if (
-          candidateTitle === coreTitle.toLowerCase() ||
-          coreTitle.toLowerCase().includes(candidateTitle) ||
-          candidateTitle.includes(coreTitle.toLowerCase())
-        ) {
-          bodyWithoutLeadingTitle = bodyWithoutLeadingTitle.slice(match[0].length).trim();
-        }
-      }
-    }
-  }
-
-  const normalizedBody = bodyWithoutLeadingTitle.replace(/^\n+/, '');
-  const rawFullExplanation = normalizedBody ? `${romanTitle} - ${normalizedBody}` : romanTitle;
-  const explanationParagraphs = splitFluentParagraphs(rawFullExplanation);
+  const bodyWithoutLeadingTitle = stripLeadingTitleFromBody(point.title, cleanedExpl, index);
+  const explanationParagraphs = splitFluentParagraphs(bodyWithoutLeadingTitle);
 
   // Evita duplicação caso o último parágrafo da exposição repita a aplicação
   if (combinedApp && explanationParagraphs.length >= 2) {
@@ -304,22 +314,21 @@ export function structureExpositoryPoint(
   }
 
   const applicationParagraphs = splitFluentParagraphs(combinedApp);
-  const fullExplanation = explanationParagraphs.join('\n\n') || romanTitle;
+  const fullExplanation = explanationParagraphs.join('\n\n');
   const application = applicationParagraphs.join('\n\n');
 
   return {
     romanTitle,
     fullExplanation,
-    explanationParagraphs: explanationParagraphs.length > 0 ? explanationParagraphs : [romanTitle],
+    explanationParagraphs,
     application,
     applicationParagraphs
   };
 }
 
 /**
- * Integra o título romano seguido de hífen diretamente ao primeiro parágrafo
- * do texto expositivo (`I. Título - Primeiro parágrafo...`), evitando duplicações
- * caso o conteúdo já venha formatado nesse padrão.
+ * Formata o corpo expositivo limpo em parágrafos separados, mantendo o
+ * título romano isolado em `romanTitle` sem emendar com hífen ao texto.
  */
 export function formatIntegratedExplanation(
   title: string,
@@ -338,33 +347,22 @@ export function formatIntegratedExplanation(
   };
 }
 
+export function formatCleanExplanationBody(
+  title: string,
+  explanation: string,
+  index: number
+): string {
+  const cleaned = stripLooseSubLabels(explanation || '');
+  return stripLeadingTitleFromBody(title, cleaned, index);
+}
+
 export function formatCleanApplication(application?: string): string {
   return stripLooseSubLabels(application || '');
 }
 
 /**
- * Separa o prefixo `I. Título - ` do restante do primeiro parágrafo para permitir
- * destaque tipográfico inline sem reintroduzir cabeçalhos separados.
- */
-export function splitInlineRomanLead(paragraph: string): {
-  leadTitle: string | null;
-  separator: string;
-  body: string;
-} {
-  const match = paragraph.match(/^([IVXLCDM]+\.\s+[^\n]{2,140}?)\s+([-–—])\s+([\s\S]+)$/);
-  if (!match) {
-    return { leadTitle: null, separator: '', body: paragraph };
-  }
-  return {
-    leadTitle: match[1],
-    separator: ` ${match[2]} `,
-    body: match[3]
-  };
-}
-
-/**
  * Normaliza um ExpositoryPoint recém-gerado ou carregado para remover (a)-(d),
- * estruturar os parágrafos fluidos e isolar o bloco de aplicação pastoral.
+ * manter o título isolado sem hífen colado ao corpo e isolar a aplicação pastoral.
  */
 export function normalizeExpositoryPoint(point: ExpositoryPoint, index: number): ExpositoryPoint {
   const structured = structureExpositoryPoint(point, index);

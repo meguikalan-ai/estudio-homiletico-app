@@ -355,8 +355,7 @@ const THEOLOGICAL_DEPTH_AND_REDEMPTIVE_CHRISTOCENTRISM_GUIDELINE = `
 DIRETRIZ MANDATÓRIA: DESENVOLVIMENTO ROBUSTO EM PARÁGRAFOS CONTÍNUOS E CRISTOCENTRISMO REDENTOR
 
 1. ESTRUTURA INTERNA MANDATÓRIA POR PONTO EXPOSITIVO (TEXTO CONTÍNUO SEM MARCADORES):
-Cada divisão expositiva do sermão (em "expositoryPoints") NÃO PODE ser escassa, telegráfica ou sintética. Cada ponto deve conter fôlego homilético amplo, iniciando diretamente o campo "explanation" com o título romano seguido de hífen e o primeiro parágrafo, exatamente no padrão:
-  "I. [Título do Tópico] - [Primeiro parágrafo com exposição textual e termos originais...]"
+Cada divisão expositiva do sermão (em "expositoryPoints") NÃO PODE ser escassa, telegráfica ou sintética. Cada ponto deve conter fôlego homilético amplo, mantendo o título/enunciado da divisão isolado exclusivamente no campo "title" (ex.: "I. Título do Tópico") e iniciando o campo "explanation" diretamente pelo primeiro parágrafo expositivo — NUNCA repita o título no início de "explanation" nem o emende ao texto com hífen ("I. Título - ...").
 
 Ao longo de parágrafos fluidos, contínuos e coesos — SEM NENHUMA marcação (a), (b), (c), (d) e SEM subtítulos ou cabeçalhos soltos/em caixa alta como "Explicação Textual Profunda:", "Paralelos Escriturísticos:", "Cristocentrismo Redentor:" ou "Aconselhamento e Confronto Pastoral:" — integre organicamente todas as camadas da exposição:
   - Exposição Textual Profunda: Exegese versículo por versículo sob a ótica histórico-gramatical, examinando palavras-chaves nos idiomas originais (hebraico/aramaico no AT, grego coiné no NT) com transliterações, raízes semânticas, tempos/modos verbais e o cenário imediato dos destinatários bíblicos com sobriedade pastoral.
@@ -546,7 +545,7 @@ app.post("/api/gemini/generate-sermon", async (req, res) => {
   * O sermão deve possuir uma estrutura objetiva e vibrante, mas sem jamais perder a densidade exegética.
   * A introdução deve ser direta e cativante, apresentando a tensão humana sem demora.
   * O contexto histórico-cultural deve destacar os pontos essenciais do cenário bíblico original.
-  * Cada ponto deve ser escrito em parágrafos contínuos (iniciando em "I. [Título] - [Primeiro parágrafo...]", sem marcadores (a)/(b)/(c)/(d) ou subtítulos soltos), integrando exegese com termos originais, paralelos bíblicos, cristocentrismo e aplicação pastoral concreta com dinamismo oral.
+  * Cada ponto deve ser escrito em parágrafos contínuos (mantendo o título isolado em "title" e iniciando "explanation" diretamente pelo primeiro parágrafo sem hífen colado ao título, sem marcadores (a)/(b)/(c)/(d) ou subtítulos soltos), integrando exegese com termos originais, paralelos bíblicos, cristocentrismo e aplicação pastoral concreta com dinamismo oral.
   * Aplicações rápidas, concretas e incisivas para a vida diária.
 `;
       break;
@@ -555,7 +554,7 @@ app.post("/api/gemini/generate-sermon", async (req, res) => {
 - DURAÇÃO MANDATÓRIA: SERMÃO EXPOSITIVO ROBUSTO DE 40 MINUTOS (MÁXIMA SOLIDEZ, DENSIDADE E PROFUNDIDADE).
   * O sermão DEVE possuir substância textual completa e densa para sustentar 40 minutos ininterruptos de pregação bíblica madura (aproximadamente 2.500 a 3.500 palavras de reflexão viva e encorpada).
   * É EXPRESSAMENTE PROIBIDO gerar tópicos resumidos, esquemáticos, telegráficos ou escassos.
-  * CADA PONTO EXPOSITIVO DEVE CONTER FÔLEGO HOMILÉTICO AMPLO EM PARÁGRAFOS CONTÍNUOS E COESOS (iniciando em "I. [Título] - [Primeiro parágrafo...]", SEM marcadores (a)/(b)/(c)/(d) e SEM cabeçalhos soltos):
+  * CADA PONTO EXPOSITIVO DEVE CONTER FÔLEGO HOMILÉTICO AMPLO EM PARÁGRAFOS CONTÍNUOS E COESOS (mantendo o título isolado em "title" e iniciando "explanation" diretamente no primeiro parágrafo sem hífen colado ao título, SEM marcadores (a)/(b)/(c)/(d) e SEM cabeçalhos soltos):
     - Exegese versículo por versículo com análise aprofundada dos termos originais (hebraico/aramaico no AT, grego coiné no NT), transliterações, tempos verbais significativos e contexto histórico-cultural com sobriedade pastoral.
     - Conexões canônicas expressas com 2 ou 3 passagens bíblicas correlatas (AT e NT) entre parênteses.
     - Articulação cristocêntrica redentora com a cruz, a justificação pela fé e a suficiência de Cristo.
@@ -567,7 +566,7 @@ app.post("/api/gemini/generate-sermon", async (req, res) => {
       durationGuideline = `
 - DURAÇÃO MANDATÓRIA: ESTUDO BÍBLICO EXPOSITIVO DE 1 HORA (MÁXIMA DENSIDADE EXEGÉTICA E DOUTRINÁRIA).
   * O foco absoluto deve ser o ensino doutrinário bíblico detalhado, o discipulado ativo e a formação teológica madura, com extensão completa para 1 hora de pregação/estudo.
-  * Desenvolva amplamente cada ponto expositivo em parágrafos contínuos e fluidos (iniciando em "I. [Título] - [Primeiro parágrafo...]", sem marcadores (a)/(b)/(c)/(d) nem rótulos artificiais), unindo múltiplos termos hebraicos/gregos e nuances gramaticais, paralelos escriturísticos canônicos, teologia bíblica da aliança centrada em Cristo e aconselhamento pastoral amplo no campo "application".
+  * Desenvolva amplamente cada ponto expositivo em parágrafos contínuos e fluidos (mantendo o título isolado em "title" e iniciando "explanation" diretamente pelo primeiro parágrafo sem hífen colado ao título, sem marcadores (a)/(b)/(c)/(d) nem rótulos artificiais), unindo múltiplos termos hebraicos/gregos e nuances gramaticais, paralelos escriturísticos canônicos, teologia bíblica da aliança centrada em Cristo e aconselhamento pastoral amplo no campo "application".
   * Ofereça um contexto histórico-cultural completo sobre os destinatários, o autor e as circunstâncias originais.
   * Mantenha sempre a oralidade fluida e o tom pastoral caloroso, sem frieza ou pedantismo.
 `;
@@ -577,7 +576,7 @@ app.post("/api/gemini/generate-sermon", async (req, res) => {
       durationGuideline = `
 - DURAÇÃO MANDATÓRIA: SERMÃO DE 30 MINUTOS (EQUILÍBRIO HOMILÉTICO CLÁSSICO E ENCORPADO).
   * Equilíbrio perfeito entre profundidade exegética e objetividade prática, com substância textual completa.
-  * Cada ponto expositivo deve fluir em parágrafos contínuos (iniciando em "I. [Título] - [Primeiro parágrafo...]", sem marcadores (a)/(b)/(c)/(d) e sem rótulos/subtítulos soltos), integrando exegese com termos originais, paralelos escriturísticos, cristocentrismo redentor e aplicação pastoral concreta no campo "application".
+  * Cada ponto expositivo deve fluir em parágrafos contínuos (mantendo o título isolado em "title" e iniciando "explanation" diretamente pelo primeiro parágrafo sem hífen colado ao título, sem marcadores (a)/(b)/(c)/(d) e sem rótulos/subtítulos soltos), integrando exegese com termos originais, paralelos escriturísticos, cristocentrismo redentor e aplicação pastoral concreta no campo "application".
   * Contexto histórico consistente e aplicações pastorais sólidas com transições homiléticas fluidas.
 `;
       break;
@@ -658,8 +657,7 @@ MANDATÓRIO PARA A ESTRUTURA DOS PONTOS (FLUXO HOMILÉTICO CONTÍNUO SEM MARCADO
 O sermão deve ser dividido em pontos na chave expositiva bíblica com material denso, encorpado e pronto para a pregação expositiva madura. Cada ponto do sermão deve desenvolver obrigatoriamente:
 1. TRANSIÇÃO ELEGANTE E FLUIDA COM SINCRONIZAÇÃO TERMINOLÓGICA (campo "precedingTransition"): Frase ponte que conecta organicamente com o ponto anterior ou com o contexto, antecipando o título do próximo ponto sem repetições robotizadas. MANDATÓRIO: A frase de transição DEVE adotar ESTRITAMENTE o mesmo vocábulo conceitual substantivo utilizado para titular ou classificar as divisões do sermão (ex.: se o sermão desenvolve Realidades, use "realidade"; se desenvolve Verdades, use "verdade"; se desenvolve Pilares, use "pilar"; se desenvolve Marcas, use "marca"; se desenvolve Fundamentos, use "fundamento"). É TERMINANTEMENTE PROIBIDO usar termos genéricos fixos como "princípio" nas pontes, a menos que a própria divisão utilize essa palavra.
 2. EXPOSIÇÃO DO TEXTO EM PARÁGRAFOS FLUIDOS (campo "explanation"):
-   - INICIE o texto diretamente com o título romano seguido de hífen e o primeiro parágrafo, no formato exato:
-     "I. [Título do Tópico] - [Primeiro parágrafo com exposição textual e termos originais...]"
+   - MANTENHA o título da divisão isolado exclusivamente no campo "title" (ex.: "I. Título do Tópico") e INICIE o campo "explanation" diretamente pelo primeiro parágrafo expositivo — NÃO repita o título e NÃO o emende ao primeiro parágrafo com hífen ("I. Título - ...").
    - Divida obrigatoriamente o conteúdo em 2 ou 3 parágrafos bem separados (quebra dupla "\\n\\n") e fluidos — SEM usar marcadores (a), (b), (c), (d) e SEM cabeçalhos ou rótulos soltos ("Explicação Textual Profunda:", "Paralelos Escriturísticos:", "Cristocentrismo Redentor:" etc.) — integrando naturalmente no corpo do texto:
      * a exegese versículo por versículo com os termos originais (hebraico/grego koiné transliterados, tempos e modos verbais e contexto imediato);
      * 2 a 3 paralelos escriturísticos canônicos (AT e NT) com referências entre parênteses;
@@ -691,7 +689,7 @@ Retorne um objeto JSON com os seguintes campos exatos de texto:
     {
       "title": "I. Título do Primeiro Ponto",
       "precedingTransition": "Frase de transição ORIGINAL e natural que antecede e introduz o primeiro ponto, adotando ESTRITAMENTE o mesmo vocábulo conceitual escolhido no último parágrafo do contexto (ex.: se 'pilares', use 'pilar'; se 'marcas', use 'marca'; se 'realidades', use 'realidade'; se 'lições', use 'lição').",
-      "explanation": "I. Título do Primeiro Ponto - [Primeiro parágrafo em prosa contínua com exposição textual versículo por versículo, termos originais transliterados no hebraico/grego, tempos verbais e contexto imediato — SEM marcações (a)/(b)/(c) e SEM subtítulos].\n\n[Segundo parágrafo fluido tecendo conexões canônicas com 2-3 passagens bíblicas correlatas entre parênteses e convergindo naturalmente para a pessoa e obra redentora de Jesus Cristo na cruz.]",
+      "explanation": "[Primeiro parágrafo em prosa contínua com exposição textual versículo por versículo, termos originais transliterados no hebraico/grego, tempos verbais e contexto imediato — SEM repetir o título com hífen, SEM marcações (a)/(b)/(c) e SEM subtítulos].\n\n[Segundo parágrafo fluido tecendo conexões canônicas com 2-3 passagens bíblicas correlatas entre parênteses e convergindo naturalmente para a pessoa e obra redentora de Jesus Cristo na cruz.]",
       "illustration": {
         "type": "cotidiano",
         "description": "Texto detalhado da ilustração do cotidiano humano que elucida visualmente a verdade ensinada."
@@ -701,7 +699,7 @@ Retorne um objeto JSON com os seguintes campos exatos de texto:
     {
       "title": "II. Título do Segundo Ponto",
       "precedingTransition": "Frase elegante e ORIGINAL de transição que antecede o segundo ponto, mantendo ESTRITAMENTE o mesmo vocábulo conceitual adotado no sermão.",
-      "explanation": "II. Título do Segundo Ponto - [Primeiro parágrafo contínuo com exposição minuciosa do texto, termos originais e análise gramatical/histórica — SEM (a)/(b)/(c) ou rótulos].\n\n[Parágrafo seguinte conectando passagens bíblicas correlatas e desenvolvendo a centralidade da graça e suficiência do sacrifício de Cristo.]",
+      "explanation": "[Primeiro parágrafo contínuo com exposição minuciosa do texto, termos originais e análise gramatical/histórica — SEM repetir o título com hífen, SEM (a)/(b)/(c) ou rótulos].\n\n[Parágrafo seguinte conectando passagens bíblicas correlatas e desenvolvendo a centralidade da graça e suficiência do sacrifício de Cristo.]",
       "illustration": {
         "type": "bíblica",
         "description": "Texto detalhado da ilustração de outra passagem bíblica ou história bíblica relacionada que ajuda a ver a verdade."
@@ -711,7 +709,7 @@ Retorne um objeto JSON com os seguintes campos exatos de texto:
     {
       "title": "III. Título do Terceiro Ponto",
       "precedingTransition": "Frase elegante e ORIGINAL de transição que antecede o terceiro ponto (ou penúltimo/último ponto, podendo haver 3 ou 4 divisões conforme a passagem), mantendo ESTRITAMENTE o mesmo vocábulo conceitual adotado no sermão.",
-      "explanation": "III. Título do Terceiro Ponto - [Primeiro parágrafo contínuo com exposição bíblica apurada, vocábulos originais e implicações teológicas — SEM (a)/(b)/(c) ou subtítulos].\n\n[Parágrafo seguinte unindo paralelos escriturísticos e mostrando como a fidelidade do Cordeiro sela esta promessa definitiva.]",
+      "explanation": "[Primeiro parágrafo contínuo com exposição bíblica apurada, vocábulos originais e implicações teológicas — SEM repetir o título com hífen, SEM (a)/(b)/(c) ou subtítulos].\n\n[Parágrafo seguinte unindo paralelos escriturísticos e mostrando como a fidelidade do Cordeiro sela esta promessa definitiva.]",
       "application": "Aplicação vital da verdade do ponto para a igreja local em prosa fluida, desafiando a inércia espiritual e convocando a congregação à fidelidade perseverante."
     }
   ],
@@ -2587,9 +2585,27 @@ function sanitizeGeneratedSermonPoints(data: any): any {
     const titlePrefixRegex = new RegExp(`^(?:(?:[IVXLCDM]+|\\d+)\\s*[.)\\-–—:]\\s*)?${escapedBare}\\s*(?:[-–—:]\\s*|\\n+)`, 'i');
     if (titlePrefixRegex.test(expl)) {
       expl = expl.replace(titlePrefixRegex, '').trim();
+    } else {
+      const genericRomanPrefixRegex = /^(?:[IVXLCDM]+)\.\s+[^\n]{4,140}?\s+[-–—]\s+/;
+      const match = expl.match(genericRomanPrefixRegex);
+      if (match) {
+        const candidateTitle = match[0]
+          .replace(/^(?:[IVXLCDM]+)\.\s+/, '')
+          .replace(/\s+[-–—]\s+$/, '')
+          .trim()
+          .toLowerCase();
+        if (
+          candidateTitle === bareTitle.toLowerCase() ||
+          bareTitle.toLowerCase().includes(candidateTitle) ||
+          candidateTitle.includes(bareTitle.toLowerCase())
+        ) {
+          expl = expl.slice(match[0].length).trim();
+        }
+      }
     }
 
-    const paragraphs = (expl ? `${romanTitle} - ${expl.replace(/^\n+/, '')}` : romanTitle)
+    const paragraphs = expl
+      .replace(/^\n+/, '')
       .split(/\n+/)
       .map((p) => p.trim())
       .filter(Boolean);
@@ -2609,7 +2625,7 @@ function sanitizeGeneratedSermonPoints(data: any): any {
       }
     }
 
-    const formattedExplanation = paragraphs.join('\n\n') || romanTitle;
+    const formattedExplanation = paragraphs.join('\n\n');
 
     return {
       ...pt,
@@ -2663,21 +2679,21 @@ function getMockSermon(title: string, theme: string, scripture: string, style: s
 
   if (isShepherd) {
     p1_title = "I. O Contentamento Pleno sob o Cajado da Graça";
-    p1_expl = `${p1_title} - Debruçando-nos sobre o texto de ${actualScripture}, observamos que a alma redimida por Deus encontra descanso absoluto. No hebraico bíblico original, a declaração de Davi abre com o nome pactual divino inefável: "Yahweh Rohi" — o Senhor é meu Pastor (v.1). O particípio hebraico "rohi" denota cuidado contínuo, ativo e pessoal; o pastor não é um espectador indiferente, mas Aquele que conhece cada ovelha e garante que nada lhe faltará. Ao nos conduzir a "águas de descanso" (no hebraico, "mei menuchot", águas mansas e restauradoras, v.2), a Escritura nos liberta da ilusão da autossuficiência e da agitação secular.
+    p1_expl = `Debruçando-nos sobre o texto de ${actualScripture}, observamos que a alma redimida por Deus encontra descanso absoluto. No hebraico bíblico original, a declaração de Davi abre com o nome pactual divino inefável: "Yahweh Rohi" — o Senhor é meu Pastor (v.1). O particípio hebraico "rohi" denota cuidado contínuo, ativo e pessoal; o pastor não é um espectador indiferente, mas Aquele que conhece cada ovelha e garante que nada lhe faltará. Ao nos conduzir a "águas de descanso" (no hebraico, "mei menuchot", águas mansas e restauradoras, v.2), a Escritura nos liberta da ilusão da autossuficiência e da agitação secular.
 
 Este pastoreio reverbera em toda a harmonia canônica das Escrituras: Isaías profetizou que Ele "como pastor apascentará o seu rebanho; entre os seus braços recolherá os cordeirinhos" (Is 40.11), e no Novo Testamento Jesus Se declara explicitamente: "Eu sou o bom pastor; o bom pastor dá a vida pelas ovelhas" (Jo 10.11). Aqui vislumbramos o ápice da teologia redentora: Jesus Cristo não apenas conduz Suas ovelhas, mas Se tornou o Cordeiro pascal sacrificado no Calvário para expiar a nossa culpa. O descanso prometido nas pastagens verdejantes é a paz duradoura com Deus conquistada pela justificação mediante a fé em Seu sangue.`;
     p1_ill = "Imagine ovelhas com muita sede que chegam a uma torrente barulhenta e impetuosa. Elas ficam assustadas e se recusam a beber. O pastor experiente, reconhecendo esse temor, cria um pequeno desvio na margem com pedras, fazendo a água correr de forma mansa e quieta. Naquele remanso de paz, as ovelhas finalmente bebem felizes e tranquilas. Assim é o Bom Pastor Jesus Cristo, que pacifica as tormentas interiores da nossa alma para nos dar o Seu refrigério imperecível.";
     p1_app = `Confronte hoje a ansiedade crônica e o ativismo frenético que tantas vezes sequestram o seu coração. O homem pós-moderno corre desesperado tentando garantir seu futuro por meio do controle e do acúmulo, vivendo em secularismo prático como se Deus não governasse o amanhã. Descanse no cuidado soberano e terno do Bom Pastor, entregando-Lhe em oração as decisões e angústias que você não pode controlar.`;
 
     p2_title = "II. A Travessia Segura por Valas e Sombras";
-    p2_expl = `${p2_title} - A caminhada cristã não ignora os cenários áridos. No desenvolvimento de ${actualScripture}, o salmista encara com honestidade o "vale da sombra da morte" (no hebraico, "ge tsalmawet", v.4) — a escuridão mais densa da experiência humana. A Bíblia não promete imunidade contra a dor terrena, mas assegura uma companhia inseparável: "porque tu estás comigo" (v.4). Sua vara ("shevet", símbolo de proteção e defesa contra predadores) e Seu cajado ("mish'enet", símbolo de amparo, resgate e disciplina pastoral) corrigem nossos desvios e sustentam nosso andar vacilante.
+    p2_expl = `A caminhada cristã não ignora os cenários áridos. No desenvolvimento de ${actualScripture}, o salmista encara com honestidade o "vale da sombra da morte" (no hebraico, "ge tsalmawet", v.4) — a escuridão mais densa da experiência humana. A Bíblia não promete imunidade contra a dor terrena, mas assegura uma companhia inseparável: "porque tu estás comigo" (v.4). Sua vara ("shevet", símbolo de proteção e defesa contra predadores) e Seu cajado ("mish'enet", símbolo de amparo, resgate e disciplina pastoral) corrigem nossos desvios e sustentam nosso andar vacilante.
 
 Essa fidelidade no sofrimento atravessa toda a revelação bíblica: "Quando passares pelas águas, estarei contigo, e, quando pelos rios, eles não te submergirão" (Is 43.2), e Paulo atesta em aflição: "A minha graça te basta, porque o meu poder se aperfeiçoa na fraqueza" (2 Co 12.9). Aqui contemplamos o Cordeiro de Deus que desceu ao mais escuro vale da morte no Calvário. Jesus experimentou o abandono vicário da cruz ("Deus meu, Deus meu, por que me desamparaste?") para que nenhum dos Seus jamais prove a separação eterna de Deus. Sua vitória na ressurreição garante que a morte foi tragada na vitória.`;
     p2_ill = "Trazendo à tona as páginas bíblicas, recordamos a travessia do povo de Israel rumo à terra prometida. Cercado pelo mar revolto em frente e pelo temível exército inimigo atrás (Êx 14.13), Moisés exortou a congregação: 'Não temais; estai quietos, e vede o livramento do Senhor'. E as águas se abriram de forma extraordinária para que passassem a salvo sobre o chão seco de areia, provando que Deus jamais desampara Seus filhos na travessia mais árdua.";
     p2_app = `Quando você enfrentar pressões financeiras, diagnósticos médicos graves ou crises familiares nesta semana, recuse a murmuração cínica e o moralismo terapêutico de autoajuda. O Evangelho não promete ausência de vales, mas a presença real do Salvador neles. Achegue-se com confiança ao trono da graça em oração sincera e busque o amparo fraterno na sua igreja local.`;
 
     p3_title = "III. O Banquete da Vitória e a Eterna Habitação";
-    p3_expl = `${p3_title} - Por fim, a mensagem de ${actualScripture} culmina em uma mesa farta e transbordante diante dos adversários (v.5) e na habitação eterna na presença de Deus (v.6). O salmista afirma que a bondade e o amor leal pactual de Deus (o insubstituível "hesed" hebraico) o seguirão ("yirdefuni", literalmente "perseguirão ativamente") todos os dias do viver. A unção com óleo sobre a cabeça simboliza consagração festiva e alegria indestrutível.
+    p3_expl = `Por fim, a mensagem de ${actualScripture} culmina em uma mesa farta e transbordante diante dos adversários (v.5) e na habitação eterna na presença de Deus (v.6). O salmista afirma que a bondade e o amor leal pactual de Deus (o insubstituível "hesed" hebraico) o seguirão ("yirdefuni", literalmente "perseguirão ativamente") todos os dias do viver. A unção com óleo sobre a cabeça simboliza consagração festiva e alegria indestrutível.
 
 Este banquete celestial conecta-se com a promessa profética de Isaías 25.6 e com as Bodas do Cordeiro anunciadas em Apocalipse 19.9: "Bem-aventurados aqueles que são chamados à ceia das bodas do Cordeiro". Isso nos conduz diretamente à Ceia da Nova Aliança: Jesus Cristo é o Anfitrião divino que pagou com Seu próprio sangue a nossa cadeira no banquete da reconciliação com o Pai. A salvação eterna não é uma hipótese vaga, mas uma aliança inquebrável selada na cruz e garantida pelo Espírito Santo.`;
     p3_app = `Troque o individualismo egoísta pela generosidade do discipulado e da comunhão fraterna na igreja local. Compartilhe o cálice transbordante da graça que você recebeu gratuitamente com os aflitos e sedentos da sua comunidade, dedicando tempo real ao serviço e à proclamação do Evangelho aos que perecem sem esperança.`;
@@ -2689,21 +2705,21 @@ Este banquete celestial conecta-se com a promessa profética de Isaías 25.6 e c
     tagsList = ["Pastoreio", "Consolo", "Fé", "Provisão", "Cristocentrismo"];
   } else if (isLove) {
     p1_title = "I. A Iniciativa Excelsa de um Deus que se Entrega";
-    p1_expl = `${p1_title} - Ao lermos ${actualScripture}, observamos que a fonte de toda redenção repousa na soberana iniciativa do amor divino. Na língua grega original do Novo Testamento, a expressão "houtos egapesen" (amou de tal maneira, v.16) emprega o tempo aoristo indicativo ativo, apontando para uma ação pontual e definitiva consumada na história cuja magnitude ultrapassa qualquer mérito humano. Deus não amou a humanidade porque encontrou nela formosura moral; Ele amou porque Ele é amor (1 Jo 4.8). Ao entregar Seu Filho Unigênito (no grego, "ton huion ton monogene", o único de Sua espécie, eterno e sem igual), o Pai estabelece as bases da reconciliação pela cruz.
+    p1_expl = `Ao lermos ${actualScripture}, observamos que a fonte de toda redenção repousa na soberana iniciativa do amor divino. Na língua grega original do Novo Testamento, a expressão "houtos egapesen" (amou de tal maneira, v.16) emprega o tempo aoristo indicativo ativo, apontando para uma ação pontual e definitiva consumada na história cuja magnitude ultrapassa qualquer mérito humano. Deus não amou a humanidade porque encontrou nela formosura moral; Ele amou porque Ele é amor (1 Jo 4.8). Ao entregar Seu Filho Unigênito (no grego, "ton huion ton monogene", o único de Sua espécie, eterno e sem igual), o Pai estabelece as bases da reconciliação pela cruz.
 
 Este amor pactual cumpre a promessa salvífica: "Mas Deus prova o seu amor para conosco em que Cristo morreu por nós, sendo nós ainda pecadores" (Rm 5.8) e "Nisto está o amor: não em que nós tenhamos amado a Deus, mas em que ele nos amou e enviou o seu Filho para propiciação pelos nossos pecados" (1 Jo 4.10). O versículo é o cerne do Evangelho: Jesus Cristo é a propiciação completa ("hilasterion") pela qual a santa ira de Deus contra o pecado foi aplacada e a misericórdia foi derramada sobre nós. Não há lugar para meritocracia humana diante da cruz; a salvação é inteiramente um dom da graça soberana.`;
     p1_ill = "Imagine um pai adotivo de comportamento reto que passa anos guardando economias e viajando por caminhos cansativos para legalizar a adoção de uma criança abandonada na rua. Ele não faz isso porque a criança conquistou o benefício ou porque ela merecia de alguma forma por boa conduta; ele faz isso movido puramente pelo ardente desejo de amor em dar um lar, um nome digno e uma nova heratabilidade espiritual a quem não tinha nada. Assim Deus agiu conosco em Cristo.";
     p1_app = `Abandone o engano do moralismo religioso que tenta negociar a bênção de Deus por meio de obras externas ou aparências de piedade. Nas trincheiras do seu lar e no relacionamento com seu cônjuge, derrube a aspereza e o ressentimento guardado; ame com a mesma graça sacrificial com que você foi amado. Nas decisões financeiras e no trabalho de segunda a sábado, pare de agir como se dependesse da malícia deste século e descanse na providência soberana do Pai.`;
 
     p2_title = "II. A Resposta da Fé Ativa e Pessoal";
-    p2_expl = `${p2_title} - O amor de Deus não flutua como uma abstração filosófica vaga; ele exige uma resposta pessoal: "para que todo aquele que nele crê" (v.16). No original grego, a expressão "pas ho pisteuon" está no particípio presente ativo, indicando não um mero momento passageiro, mas uma atitude contínua de confiança viva, rendição incondicional e dependência diária em Cristo. Sob a luz da confessionalidade batista histórica, a fé salvadora é fruto da regeneração do Espírito Santo, transformando o intelecto, as afeições e a vontade ("metanoia").
+    p2_expl = `O amor de Deus não flutua como uma abstração filosófica vaga; ele exige uma resposta pessoal: "para que todo aquele que nele crê" (v.16). No original grego, a expressão "pas ho pisteuon" está no particípio presente ativo, indicando não um mero momento passageiro, mas uma atitude contínua de confiança viva, rendição incondicional e dependência diária em Cristo. Sob a luz da confessionalidade batista histórica, a fé salvadora é fruto da regeneração do Espírito Santo, transformando o intelecto, as afeições e a vontade ("metanoia").
 
 As Escrituras confirmam essa verdade ao longo do cânon: "O justo viverá pela fé" (Hc 2.4; Rm 1.17) e "Porque pela graça sois salvos, por meio da fé; e isto não vem de vós, é dom de Deus" (Ef 2.8). O objeto exclusivo dessa fé é a pessoa de Cristo crucificado e ressurreto. Assim como a serpente de bronze foi levantada no deserto para que os feridos olhassem e vivessem (Jo 3.14-15), o Cordeiro foi erguido na cruz para que todo aquele que para Ele olhar com fé seja justificado e livre da condenação.`;
     p2_ill = "Vemos essa demanda de entrega nas páginas das Escrituras quando resgatamos a história de Nicodemos (Jo 3.1-10). Ele era um mestre conceituado da lei judaica, dotado de profundo preparo doutrinário e moral exemplar. No entanto, buscando a Cristo sob a cortina da noite, precisou aprender a abrir mão de seus orgulhos acadêmicos e do prestígio da sinagoga para se humilhar na mensagem simples de fé de que dependia de nascer de novo da água e do Espírito.";
     p2_app = `Examine honestamente as motivações secretas do seu coração perante Deus. Sua fé tem sido uma convenção social de domingo ou um discipulado diário que governa o seu casamento, a educação dos seus filhos e a sua integridade profissional? Confronte as mentiras convenientes no ambiente de trabalho e os pecados secretos que ninguém vê, rendendo-se hoje ao senhorio inegociável de Cristo.`;
 
     p3_title = "III. A Promessa de Vida Livre da Condenação";
-    p3_expl = `${p3_title} - O término do versículo em ${actualScripture} coroa o fluxo homilético com uma garantia eterna: "não pereça, mas tenha a vida eterna" (v.16). A expressão grega "zoen aionion" não significa apenas duração infinita de tempo, mas uma qualidade divina de comunhão incorruptível com o Criador, inaugurada no exato momento da justificação pela fé. O verbo "pereça" ("apoletai", no subjuntivo aoristo) alerta com solenidade contra a tragédia da perdição eterna para os que rejeitam a luz divina.
+    p3_expl = `O término do versículo em ${actualScripture} coroa o fluxo homilético com uma garantia eterna: "não pereça, mas tenha a vida eterna" (v.16). A expressão grega "zoen aionion" não significa apenas duração infinita de tempo, mas uma qualidade divina de comunhão incorruptível com o Criador, inaugurada no exato momento da justificação pela fé. O verbo "pereça" ("apoletai", no subjuntivo aoristo) alerta com solenidade contra a tragédia da perdição eterna para os que rejeitam a luz divina.
 
 O apóstolo Paulo ecoa essa sublime segurança: "Portanto, agora nenhuma condenação há para os que estão em Cristo Jesus" (Rm 8.1) e Jesus reafirma: "As minhas ovelhas ouvem a minha voz; eu as conheço, e elas me seguem. Eu lhes dou a vida eterna, e jamais perecerão" (Jo 10.27-28). Esta vida plena foi conquistada pela ressurreição triunfante do Cordeiro. Porque Ele vive, nós também viveremos. Ele quebrou o aguilhão da morte e nos selou com o Espírito da promessa, assegurando nossa herança incorruptível nos céus.`;
     p3_app = `Viva com a alegre serenidade de quem já foi eternamente justificado no Calvário. Nas angústias secretas da alma — nas crises de ansiedade, no medo do futuro ou no abatimento emocional —, não se deixe tragar pelo desespero deste século. Seja um instrumento de consolo, verdade e amor compassivo na sua vizinhança, no trabalho e na comunhão da igreja local.`;
@@ -2715,21 +2731,21 @@ O apóstolo Paulo ecoa essa sublime segurança: "Portanto, agora nenhuma condena
     tagsList = ["Amor", "Salvação", "Conversão", "Graça", "Cristocentrismo"];
   } else if (isRomans12) {
     p1_title = "I. O Sacrifício Vivo como Culto Racional";
-    p1_expl = `${p1_title} - Ao considerarmos as palavras de ${actualScripture}, deparamo-nos com o chamado apostólico à consagração integral do crente. Paulo roga aos irmãos pelas misericórdias de Deus que apresentem seus corpos como sacrifício vivo e santo (v.1). No grego bíblico, a expressão "logiken latreian" designa um culto racional, espiritual e consciente. O culto verdadeiro a Deus não se limita a um rito cerimonial no templo; ele abrange toda a corporeidade e rotina do crente — seu trabalho, suas palavras, seus pensamentos e seus afetos — consagrados como oferta viva em resposta ao que Cristo consumou por nós.
+    p1_expl = `Ao considerarmos as palavras de ${actualScripture}, deparamo-nos com o chamado apostólico à consagração integral do crente. Paulo roga aos irmãos pelas misericórdias de Deus que apresentem seus corpos como sacrifício vivo e santo (v.1). No grego bíblico, a expressão "logiken latreian" designa um culto racional, espiritual e consciente. O culto verdadeiro a Deus não se limita a um rito cerimonial no templo; ele abrange toda a corporeidade e rotina do crente — seu trabalho, suas palavras, seus pensamentos e seus afetos — consagrados como oferta viva em resposta ao que Cristo consumou por nós.
 
 Este chamado à santificação prática encontra eco em 1 Coríntios 6.19-20: "Ou não sabeis que o vosso corpo é o templo do Espírito Santo... Fostes comprados por bom preço; glorificai, pois, a Deus no vosso corpo", e em 1 Pedro 2.5 como sacerdócio santo oferecendo sacrifícios espirituais agradáveis a Deus por meio de Jesus Cristo. Nosso sacrifício vivo só é aceitável perante o Pai porque o Cordeiro imaculado Se ofereceu uma vez por todas como sacrifício expiatório definitivo (Hb 10.12,14). Não nos sacrificamos para merecer o favor divino, mas ofertamos nossa vida em gratidão jubilosa pela justificação graciosa recebida na cruz.`;
     p1_ill = "Considere a diferença entre um mero espectador em uma plateia esportiva e um atleta olímpico em quadra. O espectador apenas aplaude e comenta as jogadas enquanto consome alimentos no assento confortável. Já o atleta entrega cada gota de suor, sua respiração acelerada, o esforço dos músculos e sua disciplina diária ao objetivo do campeonato. A vida crista autêntica não é postura de plateia eclesial silenciosa, mas consagração atlética total com ações práticas.";
     p1_app = `Derrube hoje qualquer separação artificial entre a sua adoração no templo e a sua integridade de segunda a sábado. O culto racional acontece no diálogo paciente com seu cônjuge, no discipulado intencional dos seus filhos e na honestidade irrepreensível no ambiente de trabalho. Consagre seus recursos e suas mãos ao Senhor, recusando a hipocrisia de louvar a Deus com os lábios enquanto negligencia a pureza no cotidiano.`;
 
     p2_title = "II. A Resistência à Formatação Secular deste Século";
-    p2_expl = `${p2_title} - O texto em ${actualScripture} traz uma ordem imperativa incisiva: "não vos conformeis com este mundo" (v.2). No grego original, o verbo "syschematizesthe" está no imperativo presente passivo com negação, significando literalmente: "parai de permitir ser prensados no molde externo e efêmero deste século". O apóstolo nos adverte contra a infiltração do secularismo prático, onde a mentalidade consumista, o relativismo moral e o egoísmo pós-moderno tentam ditar nossos valores familiares e prioridades eclesiásticas.
+    p2_expl = `O texto em ${actualScripture} traz uma ordem imperativa incisiva: "não vos conformeis com este mundo" (v.2). No grego original, o verbo "syschematizesthe" está no imperativo presente passivo com negação, significando literalmente: "parai de permitir ser prensados no molde externo e efêmero deste século". O apóstolo nos adverte contra a infiltração do secularismo prático, onde a mentalidade consumista, o relativismo moral e o egoísmo pós-moderno tentam ditar nossos valores familiares e prioridades eclesiásticas.
 
 O apóstolo João reitera essa advertência com veemência: "Não ameis o mundo, nem o que no mundo há... porque tudo o que há no mundo, a concupiscência da carne, a concupiscência dos olhos e a soberba da vida, não é do Pai, mas do mundo" (1 Jo 2.15-16), e Tiago 4.4 lembra que a amizade com os valores mundanos é inimizade contra Deus. Jesus orou ao Pai por Seus discípulos declarando: "Eles não são do mundo, assim como eu não sou do mundo. Santifica-os na verdade; a tua palavra é a verdade" (Jo 17.16-17). Pela cruz de Cristo, fomos libertados do império das trevas e transportados para o Reino do Filho do Seu amor (Cl 1.13).`;
     p2_ill = "Encontramos perseverança inspiradora no profeta Daniel e seus jovens companheiros na opulenta corte da Babilônia (Dn 1.8). Recebendo novos nomes imperiais, estudos na melhor universidade pagã e a ordem de comer banquetes luxuosos dedicados a deuses mundanos, assentaram em seus corações o compromisso santo de não se corromperem. Recusaram a suntuosa fôrma babilônica para permanecerem puros e fiéis às Escrituras de seus pais.";
     p2_app = `Seja corajoso para dizer 'não' aos pequenos subornos morais e tentações da modernidade: à ganância nos negócios, às conversas maliciosas no escritório, à avareza financeira e à pornografia secreta nas telas digitais. Proteja a sua mente e o coração da sua família contra a fôrma secular deste século, edificando um lar alicerçado na verdade bíblica.`;
 
     p3_title = "III. A Transformação Interna pela Mente Renovada";
-    p3_expl = `${p3_title} - A resposta bíblica à pressão cultural não é um isolamento monástico, mas a transformação contínua pela renovação da mente: "metamorphousthe te anakainosei tou noos" (v.2). O imperativo grego "metamorphousthe" aponta para uma metamorfose profunda que opera de dentro para fora pelo Espírito Santo através da exposição fiel da Palavra de Deus. Quando nossa mente é saturada pelas Escrituras, somos capacitados a discernir e aprovar ("dokimazein", comprovar por experiência) qual seja a boa, agradável e perfeita vontade de Deus.
+    p3_expl = `A resposta bíblica à pressão cultural não é um isolamento monástico, mas a transformação contínua pela renovação da mente: "metamorphousthe te anakainosei tou noos" (v.2). O imperativo grego "metamorphousthe" aponta para uma metamorfose profunda que opera de dentro para fora pelo Espírito Santo através da exposição fiel da Palavra de Deus. Quando nossa mente é saturada pelas Escrituras, somos capacitados a discernir e aprovar ("dokimazein", comprovar por experiência) qual seja a boa, agradável e perfeita vontade de Deus.
 
 Paulo instrui os crentes de Éfeso a se renovarem no espírito da sua mente e a se revestirem do novo homem (Ef 4.23-24), e aos Filipenses ordena: "Tudo o que é verdadeiro, tudo o que é honesto... nisso pensai" (Fp 4.8). Temos "a mente de Cristo" (1 Co 2.16). A renovação mental não é um exercício de autoaperfeiçoamento estoico, mas o fruto da obra do Espírito que nos conforma diariamente à imagem do Filho primogênito de Deus (Rm 8.29).`;
     p3_app = `Dedique tempo real e diário ao estudo das Escrituras e à oração em família, silenciando o bombardeio ansioso das redes sociais que esvazia a alma. Nas lutas íntimas e nos períodos de cansaço ou esgotamento mental, permita que a mente de Cristo renove suas prioridades, conduzindo suas finanças, amizades e vocação em conformidade com a boa, agradável e perfeita vontade de Deus.`;
@@ -2742,21 +2758,21 @@ Paulo instrui os crentes de Éfeso a se renovarem no espírito da sua mente e a 
   } else {
     // Elegant Multi-Purpose Dynamic Sermon Template based completely on the user's input!
     p1_title = `I. A Revelação Soberana em ${actualScripture}`;
-    p1_expl = `${p1_title} - Examinando a perícope de ${actualScripture}, deparamo-nos com o alicerce inabalável da revelação divina para a nossa fé. No vocabulário teológico bíblico original, contemplamos a manifestação da fidelidade leal de Deus — Seu "hesed" pactual inabalável —, que não falha nem se desvanece diante da fragilidade humana. A passagem bíblica estabelece doutrina sólida e nos ensina com autoridade que Deus Se revela graciosamente para nos guiar em santidade e verdade.
+    p1_expl = `Examinando a perícope de ${actualScripture}, deparamo-nos com o alicerce inabalável da revelação divina para a nossa fé. No vocabulário teológico bíblico original, contemplamos a manifestação da fidelidade leal de Deus — Seu "hesed" pactual inabalável —, que não falha nem se desvanece diante da fragilidade humana. A passagem bíblica estabelece doutrina sólida e nos ensina com autoridade que Deus Se revela graciosamente para nos guiar em santidade e verdade.
 
 Esta fidelidade sagrada ilumina todo o conselho bíblico: "Porque a palavra do Senhor é reta, e todas as suas obras são fiéis" (Sl 33.4), e o apóstolo Paulo atesta que "toda a Escritura é divinamente inspirada e proveitosa para ensinar, para redarguir, para corrigir, para instruir em justiça" (2 Tm 3.16). Toda a revelação das Escrituras aponta de forma definitiva para o Verbo encarnado (Jo 1.14; Hb 1.1-2). Em Jesus Cristo, todas as promessas de Deus têm o seu "Sim" e o seu "Amém" (2 Co 1.20). Fomos justificados não por nossas forças, mas pela justiça perfeita do Cordeiro outorgada gratuitamente a nós.`;
     p1_ill = "Imagine um marinheiro experiente no meio do oceano durante uma tempestade sombria que esconde as constelações do céu. O marinheiro não tenta construir suas próprias estrelas com lanternas frágeis no convés; ele abre a caixa protetora e fixa a visão estritamente nos ponteiros estrépitos de bronze de sua bússola náutica de alta precisão. Ele sabe que a bússola não vai fazer o mar acalmar ou as ondas baixarem de tamanho de forma imediata, mas ela garante a direção verdadeira sob os ventos da tormenta. Assim é a Palavra de Deus em nossa vida espiritual.";
     p1_app = `Abandone a ilusão pós-moderna de controlar o próprio destino com base no pragmatismo imediatista ou nas modas passageiras deste século. No ambiente profissional e nas decisões financeiras da família, recuse atalhos desonestos e mentiras convenientes. Submeta as suas escolhas diárias à autoridade soberana das Escrituras, cultivando um altar de oração no lar e ensinando a verdade de Deus aos seus filhos.`;
 
     p2_title = `II. O Redentor e a Centralidade de Cristo`;
-    p2_expl = `${p2_title} - O desdobramento teológico de ${actualScripture} aponta de forma límpida para além de abstrações humanas: ele converge para o mistério da redenção consumada em Jesus Cristo, o Cordeiro de Deus. A Palavra de Deus revela com autoridade soberana que a força para obedecer emana unicamente da união com o Salvador mediante a graça regeneradora do Espírito Santo, chamando-nos ao discipulado autêntico, ao sacerdócio universal de todos os crentes e à fidelidade sacrificial na vida da igreja.
+    p2_expl = `O desdobramento teológico de ${actualScripture} aponta de forma límpida para além de abstrações humanas: ele converge para o mistério da redenção consumada em Jesus Cristo, o Cordeiro de Deus. A Palavra de Deus revela com autoridade soberana que a força para obedecer emana unicamente da união com o Salvador mediante a graça regeneradora do Espírito Santo, chamando-nos ao discipulado autêntico, ao sacerdócio universal de todos os crentes e à fidelidade sacrificial na vida da igreja.
 
 A unidade das Escrituras corrobora este testemunho em Atos 4.12: "E em nenhum outro há salvação, porque também debaixo do céu nenhum outro nome há, dado entre os homens, pelo qual devamos ser salvos", e em 1 Timóteo 2.5: "Porque há um só Deus, e um só Mediador entre Deus e os homens, Jesus Cristo homem". O Cordeiro foi traspassado pelas nossas transgressões e moído pelas nossas iniquidades (Is 53.5). A nossa justificação e a vitória sobre a condenação eterna repousam exclusivamente em Sua cruz e no poder de Sua ressurreição triunfante.`;
     p2_ill = "Encontramos o exemplo ideal dessa atitude na biografia bíblica dos crentes na nobre cidade de Bereia (At 17.11). Recebendo o ensinamento oral dos apóstolos com extrema avidez de espírito, eles não aceitaram os novos conceitos de forma ingênua ou emocionalismo barato. Dia após dia, reuniam-se em suas casas para examinar com sobriedade as Sagradas Escrituras originais, conferindo se as verdades anunciadas se alinhavam perfeitamente ao testemunho do Senhor. Esse zelo protegeu a igreja de desvios espirituais e heresias.";
     p2_app = `Permita que o Evangelho da graça de Cristo modele as suas ações reais de segunda a sábado. Pratique a integridade inegociável nos negócios, o amor paciente e o perdão sem ressentimentos no casamento, e a pureza santa nas lutas íntimas da mente. Rejeite o secularismo prático que confessa a fé com os lábios, mas vive em conformidade com o mundo nos dias úteis.`;
 
     p3_title = "III. O Testemunho Fiel e o Discipulado Frutífero";
-    p3_expl = `${p3_title} - Por fim, a revelação espiritual contida em ${actualScripture} deságua de forma viva em obediência prática na sociedade contemporânea. As boas obras bíblicas não são a causa meritória da salvação, mas o fruto legítimo da regeneração interior operada pela Palavra e pelo Espírito Santo. O crente maduro desmascara a farsa do secularismo prático e da ansiedade consumista, proclamando com a vida e com os lábios a suficiência e o senhorio de Cristo.
+    p3_expl = `Por fim, a revelação espiritual contida em ${actualScripture} deságua de forma viva em obediência prática na sociedade contemporânea. As boas obras bíblicas não são a causa meritória da salvação, mas o fruto legítimo da regeneração interior operada pela Palavra e pelo Espírito Santo. O crente maduro desmascara a farsa do secularismo prático e da ansiedade consumista, proclamando com a vida e com os lábios a suficiência e o senhorio de Cristo.
 
 Este chamado frutífero é enfatizado por Jesus em João 15.8: "Nisto é glorificado meu Pai, que deis muito fruto; e assim sereis meus discípulos", e pelo apóstolo Tiago: "Sede cumpridores da palavra, e não somente ouvintes" (Tg 1.22). Permanecer na videira verdadeira que é Cristo é o único caminho para a fertilidade espiritual duradoura (Jo 15.5). Sem Ele, nada podemos fazer; mas nEle fomos capacitados a andar em novidade de vida para a glória do Pai.`;
     p3_app = `Engaje-se ativamente no discipulado pessoal, no socorro compassivo aos necessitados e no testemunho límpido do Evangelho perante a sua vizinhança. Vença o comodismo e o individualismo contemporâneo, consolando os sobrecarregados pelo cansaço e ansiedade, e servindo com alegria sacrificial no corpo da igreja local.`;
@@ -2770,11 +2786,11 @@ Este chamado frutífero é enfatizado por Jesus em João 15.8: "Nisto é glorifi
 
   // Generate either full sermon layout or outline
   if (isOutline) {
-    p1_expl = `${p1_title} - ${p1_expl.replace(`${p1_title} - `, '').split('.')[0]}. Em consonância com os paralelos canônicos das Escrituras, esta verdade converge diretamente para a pessoa e a obra redentora de Cristo.`;
+    p1_expl = `${p1_expl.split('.')[0]}. Em consonância com os paralelos canônicos das Escrituras, esta verdade converge diretamente para a pessoa e a obra redentora de Cristo.`;
     p1_ill = `Sugestão ilustrativa homilética recomendada para estudo: ${p1_ill.substring(0, 150)}...`;
-    p2_expl = `${p2_title} - ${p2_expl.replace(`${p2_title} - `, '').split('.')[0]}. Confirmada pelos textos correlatos do cânon, esta exposição fundamenta a justificação pela fé e a graça soberana.`;
+    p2_expl = `${p2_expl.split('.')[0]}. Confirmada pelos textos correlatos do cânon, esta exposição fundamenta a justificação pela fé e a graça soberana.`;
     p2_ill = `Sugestão ilustrativa e referência de apoio de estudo: ${p2_ill.substring(0, 150)}...`;
-    p3_expl = `${p3_title} - ${p3_expl.replace(`${p3_title} - `, '').split('.')[0]}. A vitória eterna do crente encontra-se selada no sacrifício vicário do Cordeiro de Deus.`;
+    p3_expl = `${p3_expl.split('.')[0]}. A vitória eterna do crente encontra-se selada no sacrifício vicário do Cordeiro de Deus.`;
   }
 
   const [t1, t2, t3] = getSynchronizedTransitions(contextText, p1_title, p2_title, p3_title);

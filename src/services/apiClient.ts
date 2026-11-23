@@ -115,7 +115,7 @@ export function buildClientFallbackSermon(params: {
       {
         title: 'I. A Soberania da Revelação Divina',
         precedingTransition: 'A primeira verdade que emerge com nitidez desta passagem bíblica é a soberania da revelação divina sobre as incertezas humanas.',
-        explanation: 'I. A Soberania da Revelação Divina - A passagem nos convoca a uma escuta reverente da autoridade das Escrituras, ressaltando que Deus toma a iniciativa de se comunicar com a Sua criação através da verdade eterna e infalível.\n\nEssa verdade é confirmada em Salmos 119.105 e 2 Timóteo 3.16-17, que atestam a suficiência e a clareza da revelação bíblica. Toda a revelação divina converge e se cumpre na pessoa de Jesus Cristo, o Verbo encarnado (João 1.14), nosso supremo Pastor e Senhor.',
+        explanation: 'A passagem nos convoca a uma escuta reverente da autoridade das Escrituras, ressaltando que Deus toma a iniciativa de se comunicar com a Sua criação através da verdade eterna e infalível.\n\nEssa verdade é confirmada em Salmos 119.105 e 2 Timóteo 3.16-17, que atestam a suficiência e a clareza da revelação bíblica. Toda a revelação divina converge e se cumpre na pessoa de Jesus Cristo, o Verbo encarnado (João 1.14), nosso supremo Pastor e Senhor.',
         illustration: {
           type: 'cotidiano' as const,
           description: 'Assim como um viajante em noite escura precisa de um farol seguro para não naufragar nos recifes, a alma humana encontra na verdade bíblica o rumo fixo e imutável que nenhuma bússola terrena pode oferecer.'
@@ -125,7 +125,7 @@ export function buildClientFallbackSermon(params: {
       {
         title: 'II. O Resgate Redentor e a Suficiência da Graça',
         precedingTransition: 'Firmados nessa primeira verdade, a revelação bíblica avança para uma segunda verdade transformadora: o resgate redentor e a suficiência da graça.',
-        explanation: 'II. O Resgate Redentor e a Suficiência da Graça - O texto evidencia a incapacidade humana de salvar a si mesma por obras ou ritos externos, demonstrando que o perdão e a reconciliação brotam do favor soberano e gracioso do Senhor.\n\nEssa proclamação ecoa com força em Romanos 5.8 e Efésios 2.8-9 sobre o dom imerecido da vida eterna. É na cruz do Calvário que o Cordeiro de Deus tomou sobre Si a nossa condenação, satisfazendo a justiça do Pai e nos declarando justificados.',
+        explanation: 'O texto evidencia a incapacidade humana de salvar a si mesma por obras ou ritos externos, demonstrando que o perdão e a reconciliação brotam do favor soberano e gracioso do Senhor.\n\nEssa proclamação ecoa com força em Romanos 5.8 e Efésios 2.8-9 sobre o dom imerecido da vida eterna. É na cruz do Calvário que o Cordeiro de Deus tomou sobre Si a nossa condenação, satisfazendo a justiça do Pai e nos declarando justificados.',
         illustration: {
           type: 'bíblica' as const,
           description: 'Recordamos a narrativa da serpente de bronze no deserto (Números 21), resgatada por Jesus em João 3: os feridos pelo pecado não podiam curar a si mesmos; bastava olhar com fé para o socorro levantado por Deus.'
@@ -135,7 +135,7 @@ export function buildClientFallbackSermon(params: {
       {
         title: 'III. O Fruto da Obediência e a Esperança Eterna',
         precedingTransition: 'Por fim, a passagem bíblica coroa esta exposição nos confrontando com uma terceira verdade essencial: o fruto da obediência perseverante e a esperança eterna.',
-        explanation: 'III. O Fruto da Obediência e a Esperança Eterna - A fé verdadeira sempre se manifesta em discipulado perseverante, fidelidade na comunidade dos crentes e testemunho corajoso no mundo.\n\nEsse testemunho é confirmado em Tiago 2.17 e Filipenses 1.6, que assegura que Aquele que começou a boa obra haverá de completá-la. A ressurreição de Cristo é a garantia inviolável da nossa vitória final sobre a morte, o desânimo e a aflição presente.',
+        explanation: 'A fé verdadeira sempre se manifesta em discipulado perseverante, fidelidade na comunidade dos crentes e testemunho corajoso no mundo.\n\nEsse testemunho é confirmado em Tiago 2.17 e Filipenses 1.6, que assegura que Aquele que começou a boa obra haverá de completá-la. A ressurreição de Cristo é a garantia inviolável da nossa vitória final sobre a morte, o desânimo e a aflição presente.',
         application: `O Evangelho não tolera piedade de fachada ou displicência de domingo a domingo. Como está sua conduta quando ninguém está olhando? Na sua empresa ou comércio, você tem sido justo e honesto com seus colegas, ou cede aos atalhos e à cobiça do dinheiro fácil? No seu lar, você tem sido paciente ou tem despejado aspereza sobre quem ama? Seja fiel nas pequenas coisas de segunda a sábado e testemunhe de Cristo com integridade inegociável.${studySuffix}`
       }
     ],

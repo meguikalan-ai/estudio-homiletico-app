@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   Send,
   Bot,
@@ -18,7 +18,9 @@ import {
   Pencil,
   X,
   MessageSquare,
-  PanelLeft
+  PanelLeft,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { TheologicalChatMessage, TheologicalChatTopic, ExegesisResponse } from '../types';
 import {
@@ -40,6 +42,8 @@ import { safeApiPost } from '../services/apiClient';
 interface TheologicalChatProps {
   onSendToLaboratory?: (content: string, exegesisData?: ExegesisResponse, passage?: string) => void;
   onInsertToSermon?: (text: string, passage?: string) => void;
+  isFloating?: boolean;
+  onFloatingChange?: (floating: boolean) => void;
 }
 
 const LOCAL_STORAGE_ACTIVE_TOPIC_KEY = 'pastoral_active_chat_topic_id';
@@ -268,7 +272,25 @@ function loadInitialTopics(initialMessages: TheologicalChatMessage[]): Theologic
   return Array.from(topicMap.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 }
 
-export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLaboratory, onInsertToSermon }) => {
+export const TheologicalChat: React.FC<TheologicalChatProps> = ({
+  onSendToLaboratory,
+  onInsertToSermon,
+  isFloating: controlledIsFloating,
+  onFloatingChange
+}) => {
+  const [internalIsFloating, setInternalIsFloating] = useState(false);
+  const isFloating = controlledIsFloating ?? internalIsFloating;
+  const setFloating = useCallback(
+    (next: boolean) => {
+      if (onFloatingChange) {
+        onFloatingChange(next);
+      } else {
+        setInternalIsFloating(next);
+      }
+    },
+    [onFloatingChange]
+  );
+
   const [allMessages, setAllMessages] = useState<TheologicalChatMessage[]>(() => loadInitialMessages());
   const [topics, setTopics] = useState<TheologicalChatTopic[]>(() => loadInitialTopics(loadInitialMessages()));
   const [activeTopicId, setActiveTopicId] = useState<string | null>(() => {
@@ -502,6 +524,35 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
     }
   }, [renamingTopicId]);
 
+  // Escape handling & body scroll lock while floating pop-up window is open
+  useEffect(() => {
+    if (!isFloating) return;
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (renamingTopicId) return;
+      event.stopPropagation();
+      if (confirmDeleteTopicId) {
+        setConfirmDeleteTopicId(null);
+        return;
+      }
+      if (isTopicsDrawerOpen) {
+        setIsTopicsDrawerOpen(false);
+        return;
+      }
+      setFloating(false);
+    };
+
+    window.addEventListener('keydown', handleEscapeKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', handleEscapeKey);
+    };
+  }, [isFloating, renamingTopicId, confirmDeleteTopicId, isTopicsDrawerOpen, setFloating]);
+
   const activeTopic = useMemo(
     () => (activeTopicId ? topics.find(t => t.id === activeTopicId) || null : null),
     [topics, activeTopicId]
@@ -659,6 +710,10 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
     setTimeout(() => {
       setSentMessageId(prev => (prev === msg.id ? null : prev));
     }, 2500);
+
+    if (isFloating) {
+      setFloating(false);
+    }
   };
 
   const handleCopyMessage = async (msg: TheologicalChatMessage) => {
@@ -1040,135 +1095,191 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
   );
 
   return (
-    <div className="relative flex h-[calc(100vh-140px)] min-h-[600px] max-w-6xl mx-auto w-full bg-white rounded-2xl border border-[#E6E2DA] shadow-sm overflow-hidden">
-      {/* Desktop Persistent Sidebar: Assuntos */}
-      <aside className="hidden lg:flex w-72 shrink-0 border-r border-[#E6E2DA] flex-col">
-        {renderTopicsSidebarContent()}
-      </aside>
+    <div
+      role={isFloating ? 'dialog' : undefined}
+      aria-modal={isFloating ? true : undefined}
+      aria-label={isFloating ? 'Consultor Bíblico e Teológico' : undefined}
+      onClick={isFloating ? () => setFloating(false) : undefined}
+      className={
+        isFloating
+          ? 'fixed inset-0 z-[9990] bg-[#2D2926]/65 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-hidden'
+          : 'w-full'
+      }
+    >
+      <div
+        onClick={isFloating ? (e) => e.stopPropagation() : undefined}
+        className={
+          isFloating
+            ? 'relative flex w-full max-w-6xl h-[92dvh] sm:h-[88vh] max-h-[92dvh] bg-white rounded-2xl border border-[#E6E2DA] shadow-2xl overflow-hidden min-w-0'
+            : 'relative flex h-[calc(100vh-140px)] min-h-[600px] max-w-6xl mx-auto w-full bg-white rounded-2xl border border-[#E6E2DA] shadow-sm overflow-hidden min-w-0'
+        }
+      >
+        {/* Desktop Persistent Sidebar: Assuntos */}
+        <aside className="hidden lg:flex w-72 shrink-0 border-r border-[#E6E2DA] flex-col">
+          {renderTopicsSidebarContent()}
+        </aside>
 
-      {/* Mobile Drawer Overlay for Assuntos */}
-      {isTopicsDrawerOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 flex">
-          <div
-            className="fixed inset-0 bg-black/40"
-            onClick={() => setIsTopicsDrawerOpen(false)}
-          />
-          <aside className="relative z-10 w-80 max-w-[85vw] h-full bg-[#FAF8F5] border-r border-[#E6E2DA] shadow-xl flex flex-col">
-            {renderTopicsSidebarContent()}
-          </aside>
-        </div>
-      )}
-
-      {/* Main Chat Conversation Viewport */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Chat Top Header */}
-        <div className="bg-[#FAF8F5] px-4 sm:px-6 py-3.5 border-b border-[#E6E2DA] flex items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-            <button
-              type="button"
-              onClick={() => setIsTopicsDrawerOpen(true)}
-              className="lg:hidden p-2 -ml-1 text-[#2D2926] hover:bg-[#EFECE6] rounded-lg border border-[#E6E2DA] bg-white cursor-pointer shrink-0 flex items-center gap-1.5 text-xs font-semibold"
-              title="Abrir lista de assuntos"
-            >
-              <PanelLeft className="w-4 h-4 text-[#5A5A40]" />
-              <span className="tabular-nums">{topics.length}</span>
-            </button>
-
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#5A5A40] text-white flex items-center justify-center shadow-xs shrink-0">
-              <BookOpen className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-
-            <div className="min-w-0">
-              <h2 className="text-sm sm:text-base font-serif font-bold text-[#2D2926] truncate">
-                Consultor Bíblico e Teológico
-              </h2>
-              <p className="text-[11px] text-gray-500 truncate">
-                {activeTopic
-                  ? `${activeTopic.title}${activeTopic.passageReference ? ` · ${activeTopic.passageReference}` : ''}`
-                  : 'Novo assunto'}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <span
-              title={
-                syncState === 'synced'
-                  ? 'Sincronizado em tempo real com todos os dispositivos'
-                  : syncState === 'syncing'
-                  ? 'Conectando à nuvem...'
-                  : 'Erro ao sincronizar com o Firestore'
-              }
-              className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-500 px-1.5 py-1"
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  syncState === 'synced'
-                    ? 'bg-emerald-500 animate-pulse'
-                    : syncState === 'syncing'
-                    ? 'bg-amber-400 animate-pulse'
-                    : 'bg-red-500'
-                }`}
-              />
-              <Cloud className="w-3.5 h-3.5 text-[#5A5A40]" />
-            </span>
-
-            <button
-              type="button"
-              onClick={handleCreateNewTopic}
-              title="Iniciar um novo assunto de estudo"
-              className="px-3 py-1.5 bg-white hover:bg-[#5A5A40] text-[#2D2926] hover:text-white border border-[#E6E2DA] hover:border-[#5A5A40] rounded-lg transition-colors cursor-pointer text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Novo Assunto</span>
-            </button>
-          </div>
-        </div>
-
-        {fallbackNotice && (
-          <div className="mx-4 mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-center justify-between gap-2 shrink-0">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>{fallbackNotice}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setFallbackNotice(null)}
-              className="font-bold px-2 py-0.5 cursor-pointer"
-            >
-              ✕
-            </button>
+        {/* Mobile Drawer Overlay for Assuntos */}
+        {isTopicsDrawerOpen && (
+          <div className="lg:hidden fixed inset-0 z-[9995] flex">
+            <div
+              className="fixed inset-0 bg-black/40"
+              onClick={() => setIsTopicsDrawerOpen(false)}
+            />
+            <aside className="relative z-10 w-80 max-w-[85vw] h-full bg-[#FAF8F5] border-r border-[#E6E2DA] shadow-xl flex flex-col">
+              {renderTopicsSidebarContent()}
+            </aside>
           </div>
         )}
 
-        {/* Chat Messages Scroll Area */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-[#FDFBF7]/40">
-          {displayedMessages.map(msg => {
-            const isUser = msg.role === 'user';
-            const exData = msg.exegesisData;
-
-            return (
-              <div
-                key={msg.id}
-                className={`flex gap-3 sm:gap-4 ${isUser ? 'justify-end' : 'justify-start'}`}
+        {/* Main Chat Conversation Viewport */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          {/* Chat Top Header */}
+          <div className="bg-[#FAF8F5] px-3 sm:px-6 py-3 sm:py-3.5 border-b border-[#E6E2DA] flex items-center justify-between gap-2 sm:gap-3 shrink-0 min-w-0">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={() => setIsTopicsDrawerOpen(true)}
+                className="lg:hidden p-2 -ml-0.5 text-[#2D2926] hover:bg-[#EFECE6] rounded-lg border border-[#E6E2DA] bg-white cursor-pointer shrink-0 flex items-center gap-1.5 text-xs font-semibold"
+                title="Abrir lista de assuntos"
               >
-                {!isUser && (
-                  <div className="w-8 h-8 rounded-full bg-[#5A5A40] text-white flex items-center justify-center shrink-0 mt-1 shadow-2xs">
-                    <Bot className="w-4 h-4" />
-                  </div>
-                )}
+                <PanelLeft className="w-4 h-4 text-[#5A5A40]" />
+                <span className="tabular-nums">{topics.length}</span>
+              </button>
 
-                <div className={`flex flex-col max-w-[90%] sm:max-w-[82%] ${isUser ? 'items-end' : 'items-start'}`}>
-                  {/* Message Bubble */}
-                  <div
-                    className={`p-4 sm:p-5 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-2xs ${
-                      isUser
-                        ? 'bg-[#2D2926] text-white rounded-br-xs'
-                        : 'bg-white text-[#2D2926] border border-[#E6E2DA] rounded-bl-xs space-y-3.5 relative group'
-                    }`}
-                  >
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-[#5A5A40] text-white flex items-center justify-center shadow-xs shrink-0">
+                <BookOpen className="w-4 h-4 sm:w-5 sm:h-5" />
+              </div>
+
+              <div className="min-w-0">
+                <h2 className="text-xs sm:text-base font-serif font-bold text-[#2D2926] truncate">
+                  Consultor Bíblico e Teológico
+                </h2>
+                <p className="text-[11px] text-gray-500 truncate">
+                  {activeTopic
+                    ? `${activeTopic.title}${activeTopic.passageReference ? ` · ${activeTopic.passageReference}` : ''}`
+                    : 'Novo assunto'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <span
+                title={
+                  syncState === 'synced'
+                    ? 'Sincronizado em tempo real com todos os dispositivos'
+                    : syncState === 'syncing'
+                    ? 'Conectando à nuvem...'
+                    : 'Erro ao sincronizar com o Firestore'
+                }
+                className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-500 px-1.5 py-1"
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    syncState === 'synced'
+                      ? 'bg-emerald-500 animate-pulse'
+                      : syncState === 'syncing'
+                      ? 'bg-amber-400 animate-pulse'
+                      : 'bg-red-500'
+                  }`}
+                />
+                <Cloud className="w-3.5 h-3.5 text-[#5A5A40]" />
+              </span>
+
+              <button
+                type="button"
+                onClick={handleCreateNewTopic}
+                title="Iniciar um novo assunto de estudo"
+                className="px-2.5 sm:px-3 py-1.5 bg-white hover:bg-[#5A5A40] text-[#2D2926] hover:text-white border border-[#E6E2DA] hover:border-[#5A5A40] rounded-lg transition-colors cursor-pointer text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Novo Assunto</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFloating(!isFloating)}
+                title={isFloating ? 'Voltar para a visualização normal na aba' : 'Abrir Consultor em janela flutuante'}
+                aria-label={isFloating ? 'Voltar para a visualização normal na aba' : 'Abrir Consultor em janela flutuante'}
+                className={`px-2.5 sm:px-3 py-1.5 rounded-lg border transition-colors cursor-pointer text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                  isFloating
+                    ? 'bg-[#5A5A40] text-white border-[#5A5A40] hover:bg-[#2D2926]'
+                    : 'bg-white hover:bg-[#EFECE6] text-[#5A5A40] hover:text-[#2D2926] border-[#E6E2DA]'
+                }`}
+              >
+                {isFloating ? (
+                  <>
+                    <Minimize2 className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden sm:inline">Voltar à Aba</span>
+                    <span className="sm:hidden">Aba</span>
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden sm:inline">Abrir em Janela</span>
+                    <span className="sm:hidden">Janela</span>
+                  </>
+                )}
+              </button>
+
+              {isFloating && (
+                <button
+                  type="button"
+                  onClick={() => setFloating(false)}
+                  title="Fechar janela flutuante (Esc)"
+                  aria-label="Fechar janela flutuante"
+                  className="p-1.5 rounded-lg text-gray-500 hover:text-[#2D2926] hover:bg-[#EFECE6] border border-transparent hover:border-[#E6E2DA] transition-colors cursor-pointer shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {fallbackNotice && (
+            <div className="mx-3 sm:mx-4 mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span className="break-words">{fallbackNotice}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFallbackNotice(null)}
+                className="font-bold px-2 py-0.5 cursor-pointer shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Chat Messages Scroll Area */}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-6 space-y-5 sm:space-y-6 bg-[#FDFBF7]/40">
+            {displayedMessages.map(msg => {
+              const isUser = msg.role === 'user';
+              const exData = msg.exegesisData;
+
+              return (
+                <div
+                  key={msg.id}
+                  className={`flex gap-2.5 sm:gap-4 ${isUser ? 'justify-end' : 'justify-start'}`}
+                >
+                  {!isUser && (
+                    <div className="w-8 h-8 rounded-full bg-[#5A5A40] text-white flex items-center justify-center shrink-0 mt-1 shadow-2xs">
+                      <Bot className="w-4 h-4" />
+                    </div>
+                  )}
+
+                  <div className={`flex flex-col max-w-[88%] sm:max-w-[82%] min-w-0 ${isUser ? 'items-end' : 'items-start'}`}>
+                    {/* Message Bubble */}
+                    <div
+                      className={`p-3.5 sm:p-5 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-2xs max-w-full break-words ${
+                        isUser
+                          ? 'bg-[#2D2926] text-white rounded-br-xs'
+                          : 'bg-white text-[#2D2926] border border-[#E6E2DA] rounded-bl-xs space-y-3.5 relative group'
+                      }`}
+                    >
                     {!isUser && (
-                      <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-[#E6E2DA]/60 -mt-0.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 pb-2.5 border-b border-[#E6E2DA]/60 -mt-0.5">
                         <div className="flex items-center gap-2 flex-wrap">
                           <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#5A5A40]">
                             <Sparkles className="w-3.5 h-3.5 shrink-0" />
@@ -1371,7 +1482,7 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
 
         {/* Suggested Prompts (shown when starting a Novo Assunto) */}
         {activeTopicMessages.length === 0 && (
-          <div className="px-4 sm:px-6 py-2.5 bg-[#FAF8F5] border-t border-[#E6E2DA]/60 flex flex-wrap gap-2 items-center">
+          <div className="px-3 sm:px-6 py-2.5 bg-[#FAF8F5] border-t border-[#E6E2DA]/60 flex flex-wrap gap-2 items-center max-h-32 overflow-y-auto shrink-0">
             <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-[#5A5A40]" /> Sugestões:
             </span>
@@ -1380,7 +1491,7 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
                 key={idx}
                 type="button"
                 onClick={() => handleSendMessage(sug)}
-                className="text-[11px] bg-white hover:bg-[#5A5A40] text-[#2D2926] hover:text-white px-2.5 py-1 rounded-full border border-[#E6E2DA] transition-all cursor-pointer shadow-2xs font-medium text-left"
+                className="text-[11px] bg-white hover:bg-[#5A5A40] text-[#2D2926] hover:text-white px-2.5 py-1 rounded-xl border border-[#E6E2DA] transition-all cursor-pointer shadow-2xs font-medium text-left max-w-full break-words"
               >
                 {sug}
               </button>
@@ -1425,6 +1536,7 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({ onSendToLabora
             </span>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

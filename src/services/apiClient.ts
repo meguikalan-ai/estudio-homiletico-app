@@ -90,16 +90,26 @@ export function buildClientFallbackSermon(params: {
   bibleVersion?: string;
   duration?: string;
   seriesName?: string;
+  derivationMode?: 'duration' | 'bible-study' | 'custom';
 }) {
   const cleanScripture = params.scripture || 'Passagem Bíblica';
-  const cleanTitle = (params.title || `A Glória da Graça em ${cleanScripture}`).replace(/^(título|titulo|title|sermão|sermao)\s*[:\-]?\s*/i, '').trim();
+  const rawBaseTitle = (params.title || `A Glória da Graça em ${cleanScripture}`).replace(/^(título|titulo|title|sermão|sermao)\s*[:\-]?\s*/i, '').trim();
+  const isBibleStudy = params.derivationMode === 'bible-study';
+  const cleanTitle = isBibleStudy
+    ? (rawBaseTitle.toLowerCase().includes('estudo') ? rawBaseTitle : `Estudo Bíblico: ${rawBaseTitle}`)
+    : rawBaseTitle;
   const cleanTheme = params.theme || 'Fidelidade e Soberania de Deus';
+  const studySuffix = isBibleStudy
+    ? '\n\nPergunta para o Grupo (PG): Como esta verdade bíblica confronta nossa rotina semanal e de que forma podemos apoiar uns aos outros em oração nesta área?'
+    : '';
 
   return {
     title: cleanTitle,
     theme: cleanTheme,
     scripture: cleanScripture,
-    introduction: `Há momentos em que a Palavra de Deus não apenas nos instrui, mas desfaz as nossas ilusões mais seguras para nos colocar diante da realidade inegociável da eternidade. Ao abrirmos as Sagradas Escrituras em ${cleanScripture}, não estamos diante de conselhos humanos ou filosofias passageiras: deparamo-nos com a voz do próprio Deus vivo convocando o nosso coração a um confronto santo, urgente e transformador com a Sua verdade.`,
+    introduction: isBibleStudy
+      ? `Ao nos reunirmos como grupo para estudar ${cleanScripture}, somos convidados a ir além de uma leitura superficial e permitir que a Palavra de Deus molde nossas conversas, decisões e comunhão cristã. Que este roteiro desperte diálogo honesto, arrependimento sincero e encorajamento mútuo na graça do Senhor.`
+      : `Há momentos em que a Palavra de Deus não apenas nos instrui, mas desfaz as nossas ilusões mais seguras para nos colocar diante da realidade inegociável da eternidade. Ao abrirmos as Sagradas Escrituras em ${cleanScripture}, não estamos diante de conselhos humanos ou filosofias passageiras: deparamo-nos com a voz do próprio Deus vivo convocando o nosso coração a um confronto santo, urgente e transformador com a Sua verdade.`,
     biblicalContext: `O texto sagrado de ${cleanScripture} foi registrado em um contexto histórico em que o povo de Deus enfrentava desafios cruciais de fidelidade, perseverança e compreensão da aliança divina. Longe de ser um conselho moralista abstrato, esta passagem anuncia a soberania e o cuidado redentor do Todo-Poderoso, guiando o coração do crente à esperança viva. À luz desse cenário, o texto bíblico nos conduz a três verdades fundamentais que transformam a nossa caminhada com Deus.`,
     expositoryPoints: [
       {
@@ -110,7 +120,7 @@ export function buildClientFallbackSermon(params: {
           type: 'cotidiano' as const,
           description: 'Assim como um viajante em noite escura precisa de um farol seguro para não naufragar nos recifes, a alma humana encontra na verdade bíblica o rumo fixo e imutável que nenhuma bússola terrena pode oferecer.'
         },
-        application: '(d) Aconselhamento e Confronto Pastoral: Em meio à enxurrada de ruídos das redes sociais, às pressões e dilemas éticos no ambiente de trabalho e aos desgastes velados no casamento, onde você tem buscado refúgio? Pare de tentar governar sua vida pelo desespero da hora presente. Reúna sua família ao redor das Escrituras, converse com honestidade e afeto com seu cônjuge, proteja seus filhos do relativismo cultural e silencie as vozes do secularismo prático para ouvir a voz soberana de Deus.'
+        application: `(d) Aconselhamento e Confronto Pastoral: Em meio à enxurrada de ruídos das redes sociais, às pressões e dilemas éticos no ambiente de trabalho e aos desgastes velados no casamento, onde você tem buscado refúgio? Pare de tentar governar sua vida pelo desespero da hora presente. Reúna sua família ao redor das Escrituras, converse com honestidade e afeto com seu cônjuge, proteja seus filhos do relativismo cultural e silencie as vozes do secularismo prático para ouvir a voz soberana de Deus.${studySuffix}`
       },
       {
         title: 'II. O Resgate Redentor e a Suficiência da Graça',
@@ -120,13 +130,13 @@ export function buildClientFallbackSermon(params: {
           type: 'bíblica' as const,
           description: 'Recordamos a narrativa da serpente de bronze no deserto (Números 21), resgatada por Jesus em João 3: os feridos pelo pecado não podiam curar a si mesmos; bastava olhar com fé para o socorro levantado por Deus.'
         },
-        application: '(d) Aconselhamento e Confronto Pastoral: Quantos aqui carregam culpas secretas e angústias profundas na alma, ou convivem com a ansiedade esmagadora do trabalho e das contas a pagar, tentando comprar a própria paz por meio do ativismo religioso? A cruz de Cristo expõe a falência da nossa justiça própria. Rasgue as máscaras: descanse na justificação imerecida de Jesus, confesse o pecado oculto, libere o perdão que você tem negado ao seu irmão ou vizinho e receba o refrigério da graça.'
+        application: `(d) Aconselhamento e Confronto Pastoral: Quantos aqui carregam culpas secretas e angústias profundas na alma, ou convivem com a ansiedade esmagadora do trabalho e das contas a pagar, tentando comprar a própria paz por meio do ativismo religioso? A cruz de Cristo expõe a falência da nossa justiça própria. Rasgue as máscaras: descanse na justificação imerecida de Jesus, confesse o pecado oculto, libere o perdão que você tem negado ao seu irmão ou vizinho e receba o refrigério da graça.${studySuffix}`
       },
       {
         title: 'III. O Fruto da Obediência e a Esperança Eterna',
         precedingTransition: 'Por fim, a passagem bíblica coroa esta exposição nos confrontando com uma terceira verdade essencial: o fruto da obediência perseverante e a esperança eterna.',
         explanation: '(a) Explicação Textual Profunda: A fé verdadeira sempre se manifesta em discipulado perseverante, fidelidade na comunidade dos crentes e testemunho corajoso no mundo.\n\n(b) Paralelos Escriturísticos: Confirmado em Tiago 2.17 e Filipenses 1.6, que assegura que Aquele que começou a boa obra haverá de completá-la.\n\n(c) Cristocentrismo Redentor: A ressurreição de Cristo é a garantia inviolável da nossa vitória final sobre a morte, o desânimo e a aflição presente.',
-        application: '(d) Aconselhamento e Confronto Pastoral: O Evangelho não tolera piedade de fachada ou displicência de domingo a domingo. Como está sua conduta quando ninguém está olhando? Na sua empresa ou comércio, você tem sido justo e honesto com seus colegas, ou cede aos atalhos e à cobiça do dinheiro fácil? No seu lar, você tem sido paciente ou tem despejado aspereza sobre quem ama? Seja fiel nas pequenas coisas de segunda a sábado e testemunhe de Cristo com integridade inegociável.'
+        application: `(d) Aconselhamento e Confronto Pastoral: O Evangelho não tolera piedade de fachada ou displicência de domingo a domingo. Como está sua conduta quando ninguém está olhando? Na sua empresa ou comércio, você tem sido justo e honesto com seus colegas, ou cede aos atalhos e à cobiça do dinheiro fácil? No seu lar, você tem sido paciente ou tem despejado aspereza sobre quem ama? Seja fiel nas pequenas coisas de segunda a sábado e testemunhe de Cristo com integridade inegociável.${studySuffix}`
       }
     ],
     illustrations: [
@@ -146,9 +156,11 @@ export function buildClientFallbackSermon(params: {
     ],
     conclusion: `A mensagem de ${cleanScripture} nos desafia a abandonar as ilusões da autossuficiência e a depositar toda a nossa confiança no Senhor. Vimos que a Sua Palavra é soberana, o Seu resgate é completo e a Sua promessa de fidelidade permanece para sempre. Que o Espírito Santo grave estas verdades em nossos corações.`,
     pastoralAppeal: `Se você tem andado cansado, sobrecarregado pelas pressões deste mundo ou distante da comunhão com o Pai, não endureça o seu coração hoje. Aproxime-se de Cristo com sinceridade, arrependa-se e receba o renovo da Sua graça soberana. O Senhor está pronto a acolhê-lo e conduzir os seus passos. Amém.`,
-    tags: ['Exposição Bíblica', 'Graça Soberana', 'Cristocentrismo', 'Esperança'],
+    tags: isBibleStudy
+      ? ['Estudo Bíblico', 'Pequeno Grupo', 'Exposição Bíblica', 'Discipulado']
+      : ['Exposição Bíblica', 'Graça Soberana', 'Cristocentrismo', 'Esperança'],
     duration: params.duration || '30',
     fallbackActive: true,
-    fallbackReason: 'A conexão com o servidor de IA oscilou temporariamente. O sermão foi gerado pelo motor homilético de contingência estruturada com base no texto bíblico e salvo normalmente na sua Biblioteca!'
+    fallbackReason: 'A conexão com o servidor de IA oscilou temporariamente. O esboço foi gerado pelo motor homilético de contingência estruturada para revisão na Oficina (sem alterar o original).'
   };
 }

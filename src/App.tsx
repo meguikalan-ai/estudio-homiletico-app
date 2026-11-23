@@ -31,10 +31,13 @@ import {
   Sermon, SermonEvaluation, ExpositorySeries, ExpositorySeriesUnit, 
   ThemeSuggestion, CalendarCelebration, CompareVersionText, ExegesisResponse, 
   IllustrationSuggestion, SermonHistoryEntry, PericopeAnalysis, PericopePossibility,
-  VisualIllustration, HinarioType, DetailedHymn, GeneratedHomileticTheme
+  VisualIllustration, HinarioType, DetailedHymn, GeneratedHomileticTheme,
+  SermonDerivationConfig, SermonDerivationContext, SermonDerivationDraftMeta,
+  SermonDerivationDuration, ExpositoryPoint
 } from './types';
 import { TheologicalChat } from './components/TheologicalChat';
 import { SermonLibraryCard } from './components/SermonLibraryModal';
+import { DeriveSermonModal } from './components/DeriveSermonModal';
 import { ThemeGeneratorPanel } from './components/ThemeGeneratorPanel';
 import { SermonHymnsSection } from './components/SermonHymnsSection';
 import { BIBLICAL_THEMES_BANK, CHRISTIAN_THEMATIC_CALENDAR, MOCK_STARTER_SERMONS } from './data/pastoralBank';
@@ -619,6 +622,14 @@ export default function App() {
   const [generationSuccessNotice, setGenerationSuccessNotice] = useState<string | null>(null);
   const [generationErrorNotice, setGenerationErrorNotice] = useState<string | null>(null);
   const [sermonIdDeleting, setSermonIdDeleting] = useState<string | null>(null);
+  const [derivedDraftSermon, setDerivedDraftSermon] = useState<Sermon | null>(null);
+  const [derivedDraftMeta, setDerivedDraftMeta] = useState<SermonDerivationDraftMeta | null>(null);
+  const [isDerivingSermon, setIsDerivingSermon] = useState<boolean>(false);
+  const [derivingSermonId, setDerivingSermonId] = useState<string | null>(null);
+  const [deriveErrorNotice, setDeriveErrorNotice] = useState<string | null>(null);
+  const [customizeSourceSermon, setCustomizeSourceSermon] = useState<Sermon | null>(null);
+  const [deriveModalError, setDeriveModalError] = useState<string | null>(null);
+  const [isTheologicalChatFloating, setIsTheologicalChatFloating] = useState<boolean>(false);
   const [showPericopeExplorerModal, setShowPericopeExplorerModal] = useState(false);
   const [showPulpitMode, setShowPulpitMode] = useState(false);
   const [pulpitTargetSermon, setPulpitTargetSermon] = useState<Sermon | null>(null);
@@ -700,24 +711,27 @@ export default function App() {
 
     // Se houver um sermão ativo selecionado, atualiza também seu contexto bíblico / notas exegéticas e passagem bíblica
     if (selectedSermonId) {
-      setSermons(prev => {
-        const updated = prev.map(s => {
-          if (s.id === selectedSermonId) {
-            const banner = `\n\n--- SUBSÍDIOS EXEGÉTICOS & SEMENTES HOMILÉTICAS (CONSULTOR TEOLÓGICO 1689) ---\n${fullContent}`;
-            return {
-              ...s,
-              scripture: (extractedPassage && extractedPassage.trim()) ? extractedPassage.trim() : s.scripture,
-              biblicalContext: s.biblicalContext ? `${s.biblicalContext}${banner}` : fullContent,
-              updatedAt: Date.now()
-            };
-          }
-          return s;
+      const injectIntoSermon = (s: Sermon): Sermon => {
+        const banner = `\n\n--- SUBSÍDIOS EXEGÉTICOS & SEMENTES HOMILÉTICAS (CONSULTOR TEOLÓGICO 1689) ---\n${fullContent}`;
+        return {
+          ...s,
+          scripture: (extractedPassage && extractedPassage.trim()) ? extractedPassage.trim() : s.scripture,
+          biblicalContext: s.biblicalContext ? `${s.biblicalContext}${banner}` : fullContent,
+          updatedAt: Date.now()
+        };
+      };
+
+      if (derivedDraftSermon && selectedSermonId === derivedDraftSermon.id) {
+        setDerivedDraftSermon(prev => (prev ? injectIntoSermon(prev) : prev));
+      } else {
+        setSermons(prev => {
+          const updated = prev.map(s => (s.id === selectedSermonId ? injectIntoSermon(s) : s));
+          try {
+            localStorage.setItem('pastoral_sermons', JSON.stringify(updated.filter(s => !isSermonBlank(s))));
+          } catch {}
+          return updated;
         });
-        try {
-          localStorage.setItem('pastoral_sermons', JSON.stringify(updated.filter(s => !isSermonBlank(s))));
-        } catch {}
-        return updated;
-      });
+      }
     }
 
     // Se o tema estiver vazio e houver cerne teológico, preenche de forma inteligente
@@ -758,23 +772,24 @@ export default function App() {
 
     // 2. Se houver sermão ativo, atualiza o apelo pastoral com a peroração magistral
     if (activeSermon) {
-      setSermons(prev => {
-        const updated = prev.map(s => {
-          if (s.id === activeSermon.id) {
-            return {
-              ...s,
-              scripture: s.scripture || targetScripture || scriptureInput,
-              pastoralAppeal: perorationText,
-              updatedAt: Date.now()
-            };
-          }
-          return s;
-        });
-        try {
-          localStorage.setItem('pastoral_sermons', JSON.stringify(updated.filter(s => !isSermonBlank(s))));
-        } catch {}
-        return updated;
+      const injectAppeal = (s: Sermon): Sermon => ({
+        ...s,
+        scripture: s.scripture || targetScripture || scriptureInput,
+        pastoralAppeal: perorationText,
+        updatedAt: Date.now()
       });
+
+      if (derivedDraftSermon && activeSermon.id === derivedDraftSermon.id) {
+        setDerivedDraftSermon(prev => (prev ? injectAppeal(prev) : prev));
+      } else {
+        setSermons(prev => {
+          const updated = prev.map(s => (s.id === activeSermon.id ? injectAppeal(s) : s));
+          try {
+            localStorage.setItem('pastoral_sermons', JSON.stringify(updated.filter(s => !isSermonBlank(s))));
+          } catch {}
+          return updated;
+        });
+      }
     }
 
     // 3. Injeta também nos subsídios homiléticos do formulário para preservação
@@ -829,39 +844,41 @@ export default function App() {
 
     // Se houver sermão ativo, atualiza também nos pontos/ilustrações
     if (selectedSermonId) {
-      setSermons(prev => {
-        const updated = prev.map(s => {
-          if (s.id === selectedSermonId) {
-            const currentPoints = s.expositoryPoints || [];
-            let placed = false;
-            const updatedPoints = currentPoints.map((pt) => {
-              if (!placed && (!pt.illustration || !pt.illustration.description)) {
-                placed = true;
-                return {
-                  ...pt,
-                  illustration: {
-                    type: (ill.scripture ? 'bíblica' : 'cotidiano') as 'bíblica' | 'cotidiano',
-                    description: `${ill.story}\n\nLição Central: ${ill.moral}`
-                  }
-                };
-              }
-              return pt;
-            });
-
+      const injectIllustration = (s: Sermon): Sermon => {
+        const currentPoints = s.expositoryPoints || [];
+        let placed = false;
+        const updatedPoints = currentPoints.map((pt) => {
+          if (!placed && (!pt.illustration || !pt.illustration.description)) {
+            placed = true;
             return {
-              ...s,
-              expositoryPoints: updatedPoints,
-              illustrations: updatedPoints.filter(p => p.illustration?.description).map(p => p.illustration!)
+              ...pt,
+              illustration: {
+                type: (ill.scripture ? 'bíblica' : 'cotidiano') as 'bíblica' | 'cotidiano',
+                description: `${ill.story}\n\nLição Central: ${ill.moral}`
+              }
             };
           }
-          return s;
+          return pt;
         });
 
-        try {
-          localStorage.setItem('pastoral_sermons', JSON.stringify(updated.filter(s => !isSermonBlank(s))));
-        } catch {}
-        return updated;
-      });
+        return {
+          ...s,
+          expositoryPoints: updatedPoints,
+          illustrations: updatedPoints.filter(p => p.illustration?.description).map(p => p.illustration!)
+        };
+      };
+
+      if (derivedDraftSermon && selectedSermonId === derivedDraftSermon.id) {
+        setDerivedDraftSermon(prev => (prev ? injectIllustration(prev) : prev));
+      } else {
+        setSermons(prev => {
+          const updated = prev.map(s => (s.id === selectedSermonId ? injectIllustration(s) : s));
+          try {
+            localStorage.setItem('pastoral_sermons', JSON.stringify(updated.filter(s => !isSermonBlank(s))));
+          } catch {}
+          return updated;
+        });
+      }
     }
 
     // Muda para o Laboratório ('workspace') e executa scroll suave
@@ -882,7 +899,13 @@ export default function App() {
     }, 4000);
   };
 
-  const activeSermon = sermons.find(s => s.id === selectedSermonId);
+  const activeSermon =
+    derivedDraftSermon && selectedSermonId === derivedDraftSermon.id
+      ? derivedDraftSermon
+      : sermons.find(s => s.id === selectedSermonId);
+  const isActiveSermonDerivedDraft = Boolean(
+    derivedDraftSermon && activeSermon && activeSermon.id === derivedDraftSermon.id
+  );
 
   const getSermonParts = (s: Sermon) => {
     const parts = [
@@ -998,8 +1021,12 @@ export default function App() {
       updatedAt: Date.now()
     };
 
-    setSermons(prev => prev.map(s => s.id === activeSermon.id ? updatedSermon : s));
-    saveSermonToCloud(updatedSermon, FIXED_PASTORAL_UID);
+    if (derivedDraftSermon && activeSermon.id === derivedDraftSermon.id) {
+      setDerivedDraftSermon(updatedSermon);
+    } else {
+      setSermons(prev => prev.map(s => s.id === activeSermon.id ? updatedSermon : s));
+      saveSermonToCloud(updatedSermon, FIXED_PASTORAL_UID);
+    }
   };
 
   const handleDeleteHistoryEntry = (entryId: string) => {
@@ -1014,35 +1041,44 @@ export default function App() {
       updatedAt: Date.now()
     };
 
-    setSermons(prev => prev.map(s => s.id === activeSermon.id ? updatedSermon : s));
-    saveSermonToCloud(updatedSermon, FIXED_PASTORAL_UID);
+    if (derivedDraftSermon && activeSermon.id === derivedDraftSermon.id) {
+      setDerivedDraftSermon(updatedSermon);
+    } else {
+      setSermons(prev => prev.map(s => s.id === activeSermon.id ? updatedSermon : s));
+      saveSermonToCloud(updatedSermon, FIXED_PASTORAL_UID);
+    }
   };
 
-  const updateActiveSermonField = (field: keyof Sermon, value: any) => {
+  const applyActiveSermonTransform = (targetId: string, transform: (s: Sermon) => Sermon) => {
+    if (derivedDraftSermon && targetId === derivedDraftSermon.id) {
+      setDerivedDraftSermon(prev => (prev ? transform(prev) : prev));
+      return;
+    }
+    setSermons(prev => prev.map(s => (s.id === targetId ? transform(s) : s)));
+  };
+
+  const updateActiveSermonField = <K extends keyof Sermon>(field: K, value: Sermon[K]) => {
     if (!activeSermon) return;
-    setSermons(prev => prev.map(s => {
-      if (s.id === activeSermon.id) {
-        let cleanedValue = value;
-        if (field === 'title' && typeof value === 'string') {
-          // Clean prefixes like "Título:", "Título -", "Sermão:", etc.
-          cleanedValue = value.replace(/^(título|titulo|title|sermão|sermao)\s*[:\-]?\s*/i, '').trim();
-        }
-        let updated = { ...s, [field]: cleanedValue, updatedAt: Date.now() };
-        if (field === 'expositoryPoints') {
-          const pts = value as any[];
-          const flatIllustrations = pts
-            .filter((p: any) => p.illustration && p.illustration.description)
-            .map((p: any) => p.illustration);
-          const flatApplications = pts
-            .map((p: any) => p.application)
-            .filter(Boolean);
-          updated.illustrations = flatIllustrations;
-          updated.applications = flatApplications;
-        }
-        return updated;
+    applyActiveSermonTransform(activeSermon.id, (s) => {
+      let cleanedValue = value;
+      if (field === 'title' && typeof value === 'string') {
+        // Clean prefixes like "Título:", "Título -", "Sermão:", etc.
+        cleanedValue = value.replace(/^(título|titulo|title|sermão|sermao)\s*[:\-]?\s*/i, '').trim() as Sermon[K];
       }
-      return s;
-    }));
+      const updated: Sermon = { ...s, [field]: cleanedValue, updatedAt: Date.now() };
+      if (field === 'expositoryPoints' && Array.isArray(value)) {
+        const pts = value as ExpositoryPoint[];
+        const flatIllustrations = pts
+          .filter((p) => Boolean(p.illustration && p.illustration.description))
+          .map((p) => p.illustration!);
+        const flatApplications = pts
+          .map((p) => p.application)
+          .filter(Boolean);
+        updated.illustrations = flatIllustrations;
+        updated.applications = flatApplications;
+      }
+      return updated;
+    });
   };
 
   const getLocationsForCliche = (sermon: Sermon, cliche: string) => {
@@ -1095,10 +1131,8 @@ export default function App() {
 
   const handleApplyClicheReplacement = (cliche: string, suggestion: string, sectionKey: string) => {
     if (!activeSermon) return;
-    
-    setSermons(prev => prev.map(s => {
-      if (s.id !== activeSermon.id) return s;
-      
+
+    applyActiveSermonTransform(activeSermon.id, (s) => {
       const updated = { ...s };
       const escapedCliche = cliche.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
       const regex = new RegExp(escapedCliche, 'gi');
@@ -1163,10 +1197,10 @@ export default function App() {
           updated.applications = apps;
         }
       }
-      
+
       updated.updatedAt = Date.now();
       return updated;
-    }));
+    });
   };
 
   const handleResetToNewSermon = () => {
@@ -1177,7 +1211,9 @@ export default function App() {
     setSeriesName('');
     setTheologicalNotes('');
     
-    // Clear selection so workspace is clean and ready for a fresh study
+    // Clear selection and any unsaved derived draft
+    setDerivedDraftSermon(null);
+    setDerivedDraftMeta(null);
     setSelectedSermonId('');
     setActiveSermonPart('intro');
     setApiFallbackNotice(null);
@@ -1285,6 +1321,8 @@ export default function App() {
         updatedAt: Date.now()
       };
 
+      setDerivedDraftSermon(null);
+      setDerivedDraftMeta(null);
       setSermons(prev => {
         const updated = [newSermon, ...prev.filter(s => s.id !== newSermon.id)];
         localStorage.setItem('pastoral_sermons', JSON.stringify(updated.filter(s => !isSermonBlank(s))));
@@ -1336,8 +1374,261 @@ export default function App() {
     }
   };
 
+  interface GeneratedSermonApiPayload {
+    title?: string;
+    theme?: string;
+    scripture?: string;
+    introduction?: string;
+    biblicalContext?: string;
+    expositoryPoints?: ExpositoryPoint[];
+    illustrations?: { type: 'bíblica' | 'cotidiano'; description: string }[];
+    applications?: string[];
+    conclusion?: string;
+    pastoralAppeal?: string;
+    tags?: string[];
+    fallbackActive?: boolean;
+    fallbackReason?: string;
+  }
+
+  const buildBaseSummaryForDerivation = (source: Sermon): string => {
+    const pointsText = (source.expositoryPoints || [])
+      .slice(0, 4)
+      .map((pt, idx) => {
+        const appSnippet = (pt.application || '').replace(/\s+/g, ' ').slice(0, 140);
+        return `${idx + 1}. ${pt.title}${appSnippet ? ` — Aplicação: ${appSnippet}` : ''}`;
+      })
+      .join('\n');
+
+    return [
+      `Tema Central: ${source.theme || 'Exposição bíblica'}`,
+      source.introduction ? `Introdução (síntese): ${source.introduction.replace(/\s+/g, ' ').slice(0, 280)}` : '',
+      source.biblicalContext ? `Contexto (síntese): ${source.biblicalContext.replace(/\s+/g, ' ').slice(0, 240)}` : '',
+      pointsText ? `Estrutura Expositiva:\n${pointsText}` : '',
+      source.conclusion ? `Conclusão (síntese): ${source.conclusion.replace(/\s+/g, ' ').slice(0, 200)}` : ''
+    ].filter(Boolean).join('\n');
+  };
+
+  const handleDeriveSermon = async (sourceSermon: Sermon, config: SermonDerivationConfig) => {
+    setIsDerivingSermon(true);
+    setDerivingSermonId(sourceSermon.id);
+    setDeriveErrorNotice(null);
+    setDeriveModalError(null);
+
+    const baseSummary = buildBaseSummaryForDerivation(sourceSermon);
+    const derivationContext: SermonDerivationContext = {
+      mode: config.mode,
+      duration: config.duration,
+      sourceSermonId: sourceSermon.id,
+      sourceTitle: sourceSermon.title,
+      sourceScripture: sourceSermon.scripture,
+      baseSummary,
+      customNotes: config.notes || undefined,
+      targetAudience: config.audience
+    };
+
+    const targetTitleHint = config.mode === 'bible-study'
+      ? `Estudo Bíblico: ${sourceSermon.title}`
+      : sourceSermon.title;
+
+    let data: GeneratedSermonApiPayload | null = null;
+
+    try {
+      data = await safeApiPost<GeneratedSermonApiPayload>('/api/gemini/generate-sermon', {
+        title: targetTitleHint,
+        theme: sourceSermon.theme,
+        scripture: sourceSermon.scripture,
+        style: config.style,
+        churchProfile: sourceSermon.churchProfile,
+        audience: config.audience,
+        bibleVersion: sourceSermon.bibleVersion,
+        isOutline: false,
+        seriesName: sourceSermon.seriesName,
+        churchProfileDetails,
+        duration: config.duration,
+        derivationContext
+      }, { retries: 1, timeoutMs: 105000 });
+    } catch (err) {
+      console.warn('[handleDeriveSermon] Falha de rede ou timeout. Acionando contingência local:', err);
+      data = buildClientFallbackSermon({
+        title: sourceSermon.title,
+        theme: sourceSermon.theme,
+        scripture: sourceSermon.scripture,
+        style: config.style,
+        churchProfile: sourceSermon.churchProfile,
+        audience: config.audience,
+        bibleVersion: sourceSermon.bibleVersion,
+        duration: config.duration,
+        seriesName: sourceSermon.seriesName,
+        derivationMode: config.mode
+      });
+    }
+
+    try {
+      if (data?.fallbackActive) {
+        setApiFallbackNotice(data.fallbackReason || 'Modo de contingência homilética utilizado nesta variação.');
+      } else {
+        setApiFallbackNotice(null);
+      }
+
+      const hinarioToUse = sourceSermon.hymns?.preferredHinario || preferredHinario;
+      const hymnsSelection = selectHymnsForSermon(
+        `${data?.title || sourceSermon.title} ${data?.introduction || ''} ${data?.theme || sourceSermon.theme}`,
+        sourceSermon.theme || 'Geral',
+        sourceSermon.churchProfile,
+        hinarioToUse
+      );
+      const formattedHymns = buildSermonHymnsRecord(hymnsSelection, hinarioToUse);
+
+      const cleanedTitle = (data?.title || targetTitleHint || sourceSermon.title)
+        .replace(/^(título|titulo|title|sermão|sermao)\s*[:\-]?\s*/i, '')
+        .trim();
+
+      const newDraft: Sermon = {
+        id: 'ser_deriv_' + Date.now(),
+        title: cleanedTitle,
+        theme: data?.theme || sourceSermon.theme,
+        scripture: data?.scripture || sourceSermon.scripture,
+        introduction: data?.introduction || sourceSermon.introduction,
+        biblicalContext: data?.biblicalContext || sourceSermon.biblicalContext,
+        expositoryPoints: (data?.expositoryPoints && data.expositoryPoints.length > 0)
+          ? data.expositoryPoints
+          : sourceSermon.expositoryPoints,
+        illustrations: data?.illustrations || sourceSermon.illustrations,
+        applications: data?.applications || sourceSermon.applications,
+        conclusion: data?.conclusion || sourceSermon.conclusion,
+        pastoralAppeal: data?.pastoralAppeal || sourceSermon.pastoralAppeal,
+        date: new Date().toISOString(),
+        style: config.style,
+        churchProfile: sourceSermon.churchProfile,
+        audience: config.audience,
+        bibleVersion: sourceSermon.bibleVersion,
+        isOutline: false,
+        duration: config.duration,
+        tags: data?.tags || sourceSermon.tags || ['Derivado'],
+        seriesName: sourceSermon.seriesName,
+        hymns: formattedHymns,
+        isFavorite: false,
+        isArchived: false,
+        updatedAt: Date.now()
+      };
+
+      setDerivedDraftSermon(newDraft);
+      setDerivedDraftMeta({
+        sourceSermonId: sourceSermon.id,
+        sourceTitle: sourceSermon.title,
+        sourceScripture: sourceSermon.scripture,
+        mode: config.mode,
+        duration: config.duration,
+        audience: config.audience
+      });
+      setSelectedSermonId(newDraft.id);
+      setActiveTab('workspace');
+      setActiveSermonPart('intro');
+      setCustomizeSourceSermon(null);
+
+      const modeText = config.mode === 'bible-study'
+        ? `Estudo Bíblico (${config.duration} min)`
+        : config.mode === 'custom'
+        ? `Mensagem Personalizada (${config.duration} min)`
+        : `Versão de ${config.duration} min`;
+      const notice = `${modeText} carregada na Oficina para revisão! O sermão original foi preservado na Biblioteca.`;
+      setToastNotice(notice);
+      setTimeout(() => {
+        setToastNotice(prev => (prev === notice ? null : prev));
+      }, 5000);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erro inesperado ao montar a variação derivada.';
+      setDeriveErrorNotice(msg);
+      setDeriveModalError(msg);
+    } finally {
+      setIsDerivingSermon(false);
+      setDerivingSermonId(null);
+    }
+  };
+
+  const handleQuickDeriveDuration = (sourceSermon: Sermon, duration: SermonDerivationDuration) => {
+    void handleDeriveSermon(sourceSermon, {
+      mode: 'duration',
+      duration,
+      audience: sourceSermon.audience || 'Membresia em geral',
+      style: sourceSermon.style || 'original',
+      notes: ''
+    });
+  };
+
+  const handleQuickDeriveBibleStudy = (sourceSermon: Sermon) => {
+    const defaultDuration: SermonDerivationDuration =
+      sourceSermon.duration === '20' || sourceSermon.duration === '30' || sourceSermon.duration === '40'
+        ? sourceSermon.duration
+        : '30';
+    void handleDeriveSermon(sourceSermon, {
+      mode: 'bible-study',
+      duration: defaultDuration,
+      audience: 'Pequeno Grupo / Célula (PG)',
+      style: sourceSermon.style || 'original',
+      notes: 'Estruturar com perguntas de diálogo e aplicação prática para reunião em grupo.'
+    });
+  };
+
+  const handleSaveDerivedDraftToLibrary = () => {
+    if (!derivedDraftSermon) return;
+    const savedSermon: Sermon = {
+      ...derivedDraftSermon,
+      id: 'ser_' + Date.now(),
+      date: new Date().toISOString(),
+      updatedAt: Date.now()
+    };
+
+    setSermons(prev => {
+      const updated = [savedSermon, ...prev.filter(s => s.id !== savedSermon.id)];
+      try {
+        localStorage.setItem('pastoral_sermons', JSON.stringify(updated.filter(s => !isSermonBlank(s))));
+      } catch {}
+      return updated;
+    });
+    setDerivedDraftSermon(null);
+    setDerivedDraftMeta(null);
+    setSelectedSermonId(savedSermon.id);
+
+    setCloudSyncStatus('syncing');
+    setCloudSyncMessage('Espelhando variação salva na nuvem...');
+    saveSermonToCloud(savedSermon, FIXED_PASTORAL_UID).then(success => {
+      if (success) {
+        setCloudSyncStatus('synced');
+        setCloudSyncMessage('Espelhado em tempo real');
+        setCloudWriteError(null);
+      } else {
+        setCloudSyncStatus('error');
+        setCloudSyncMessage('Falha ao espelhar variação no Firestore');
+      }
+    }).catch(err => {
+      const errObj = err as { code?: string; message?: string };
+      setCloudSyncStatus('error');
+      setCloudSyncMessage(`Erro: ${errObj.code || 'firestore/save-error'}`);
+    });
+
+    const notice = `Nova variação "${savedSermon.title}" salva na Biblioteca! O sermão original permanece intacto.`;
+    setToastNotice(notice);
+    setTimeout(() => {
+      setToastNotice(prev => (prev === notice ? null : prev));
+    }, 4500);
+  };
+
+  const handleDiscardDerivedDraft = () => {
+    setDerivedDraftSermon(null);
+    setDerivedDraftMeta(null);
+    setSelectedSermonId('');
+    const notice = 'Rascunho derivado descartado. Nenhuma alteração foi feita na Biblioteca.';
+    setToastNotice(notice);
+    setTimeout(() => {
+      setToastNotice(prev => (prev === notice ? null : prev));
+    }, 3500);
+  };
+
   const suggestIllustrationForPoint = async (pIdx: number, type: 'bíblica' | 'cotidiano') => {
     if (!activeSermon) return;
+    const targetId = activeSermon.id;
     const point = activeSermon.expositoryPoints[pIdx];
     
     const updatedWithLoading = activeSermon.expositoryPoints.map((pt, idx) => {
@@ -1353,15 +1644,10 @@ export default function App() {
       return pt;
     });
 
-    setSermons(prev => prev.map(s => {
-      if (s.id === selectedSermonId) {
-        return { ...s, expositoryPoints: updatedWithLoading };
-      }
-      return s;
-    }));
+    applyActiveSermonTransform(targetId, (s) => ({ ...s, expositoryPoints: updatedWithLoading }));
 
     try {
-      const data: any = await safeApiPost('/api/gemini/generate-illustrations', {
+      const data: { illustrations?: IllustrationSuggestion[] } = await safeApiPost('/api/gemini/generate-illustrations', {
         topic: `${point.title} (${activeSermon.title})`,
         type
       }, { retries: 1, timeoutMs: 85000 });
@@ -1370,58 +1656,28 @@ export default function App() {
         const suggestion = data.illustrations[0];
         const desc = `${suggestion.story}\n\nLição Central: ${suggestion.moral || suggestion.title}`;
         
-        setSermons(prev => prev.map(s => {
-          if (s.id === selectedSermonId) {
-            const pts = s.expositoryPoints.map((pt, idx) => {
-              if (idx === pIdx) {
-                return {
-                  ...pt,
-                  illustration: {
-                    type,
-                    description: desc
-                  }
-                };
-              }
-              return pt;
-            });
-            return {
-              ...s,
-              expositoryPoints: pts,
-              illustrations: pts.filter(p => p.illustration?.description).map(p => p.illustration),
-              updatedAt: Date.now()
-            };
-          }
-          return s;
-        }));
+        applyActiveSermonTransform(targetId, (s) => {
+          const pts = s.expositoryPoints.map((pt, idx) => {
+            if (idx === pIdx) {
+              return {
+                ...pt,
+                illustration: {
+                  type,
+                  description: desc
+                }
+              };
+            }
+            return pt;
+          });
+          return {
+            ...s,
+            expositoryPoints: pts,
+            illustrations: pts.filter(p => p.illustration?.description).map(p => p.illustration!),
+            updatedAt: Date.now()
+          };
+        });
       } else {
-        setSermons(prev => prev.map(s => {
-          if (s.id === selectedSermonId) {
-            const pts = s.expositoryPoints.map((pt, idx) => {
-              if (idx === pIdx) {
-                return {
-                  ...pt,
-                  illustration: {
-                    type,
-                    description: `Ilustração sugestiva baseada em ${point.title}: Uma história edificante de entrega e compromisso autêntico no serviço cristão.`
-                  }
-                };
-              }
-              return pt;
-            });
-            return {
-              ...s,
-              expositoryPoints: pts,
-              illustrations: pts.filter(p => p.illustration?.description).map(p => p.illustration),
-              updatedAt: Date.now()
-            };
-          }
-          return s;
-        }));
-      }
-    } catch (err) {
-      console.warn("[suggestIllustrationForPoint] Usando ilustração alternativa por oscilação de rede:", err);
-      setSermons(prev => prev.map(s => {
-        if (s.id === selectedSermonId) {
+        applyActiveSermonTransform(targetId, (s) => {
           const pts = s.expositoryPoints.map((pt, idx) => {
             if (idx === pIdx) {
               return {
@@ -1437,12 +1693,33 @@ export default function App() {
           return {
             ...s,
             expositoryPoints: pts,
-            illustrations: pts.filter(p => p.illustration?.description).map(p => p.illustration),
+            illustrations: pts.filter(p => p.illustration?.description).map(p => p.illustration!),
             updatedAt: Date.now()
           };
-        }
-        return s;
-      }));
+        });
+      }
+    } catch (err) {
+      console.warn("[suggestIllustrationForPoint] Usando ilustração alternativa por oscilação de rede:", err);
+      applyActiveSermonTransform(targetId, (s) => {
+        const pts = s.expositoryPoints.map((pt, idx) => {
+          if (idx === pIdx) {
+            return {
+              ...pt,
+              illustration: {
+                type,
+                description: `Ilustração sugestiva baseada em ${point.title}: Uma história edificante de entrega e compromisso autêntico no serviço cristão.`
+              }
+            };
+          }
+          return pt;
+        });
+        return {
+          ...s,
+          expositoryPoints: pts,
+          illustrations: pts.filter(p => p.illustration?.description).map(p => p.illustration!),
+          updatedAt: Date.now()
+        };
+      });
     }
   };
 
@@ -1450,12 +1727,12 @@ export default function App() {
     if (!activeSermon) return;
     setIsEvaluating(true);
     try {
-      const data: any = await safeApiPost('/api/gemini/evaluate-sermon', {
+      const data: SermonEvaluation & { fallbackActive?: boolean; fallbackReason?: string } = await safeApiPost('/api/gemini/evaluate-sermon', {
         sermon: activeSermon
       }, { retries: 1, timeoutMs: 85000 });
       
       if (data?.fallbackActive) {
-        setApiFallbackNotice(data.fallbackReason);
+        setApiFallbackNotice(data.fallbackReason || null);
       } else {
         setApiFallbackNotice(null);
       }
@@ -1471,48 +1748,46 @@ export default function App() {
 
   const handleImproveSermon = async (improvement: string, idx: number) => {
     if (!activeSermon) return;
+    const targetId = activeSermon.id;
     setImprovingSuggestionIdx(idx);
     try {
-      const data: any = await safeApiPost('/api/gemini/improve-sermon', {
+      const data: Partial<Sermon> & { fallbackActive?: boolean; fallbackReason?: string } = await safeApiPost('/api/gemini/improve-sermon', {
         sermon: activeSermon,
         improvement
       }, { retries: 1, timeoutMs: 85000 });
 
       if (data?.fallbackActive) {
-        setApiFallbackNotice(data.fallbackReason);
+        setApiFallbackNotice(data.fallbackReason || null);
       } else {
         setApiFallbackNotice(null);
       }
 
-      setSermons(prev => prev.map(s => {
-        if (s.id === activeSermon.id) {
-          const updatedSermon: Sermon = {
-            ...s,
-            title: data.title || s.title,
-            theme: data.theme || s.theme,
-            scripture: data.scripture || s.scripture,
-            introduction: data.introduction || s.introduction,
-            biblicalContext: data.biblicalContext || s.biblicalContext,
-            expositoryPoints: data.expositoryPoints || s.expositoryPoints,
-            conclusion: data.conclusion || s.conclusion,
-            pastoralAppeal: data.pastoralAppeal || s.pastoralAppeal,
-            updatedAt: Date.now()
+      applyActiveSermonTransform(targetId, (s) => {
+        const updatedSermon: Sermon = {
+          ...s,
+          title: data.title || s.title,
+          theme: data.theme || s.theme,
+          scripture: data.scripture || s.scripture,
+          introduction: data.introduction || s.introduction,
+          biblicalContext: data.biblicalContext || s.biblicalContext,
+          expositoryPoints: data.expositoryPoints || s.expositoryPoints,
+          conclusion: data.conclusion || s.conclusion,
+          pastoralAppeal: data.pastoralAppeal || s.pastoralAppeal,
+          updatedAt: Date.now()
+        };
+
+        if (updatedSermon.evaluation?.suggestedImprovements) {
+          updatedSermon.evaluation = {
+            ...updatedSermon.evaluation,
+            suggestedImprovements: updatedSermon.evaluation.suggestedImprovements.filter((_, i) => i !== idx)
           };
-
-          if (updatedSermon.evaluation?.suggestedImprovements) {
-            updatedSermon.evaluation = {
-              ...updatedSermon.evaluation,
-              suggestedImprovements: updatedSermon.evaluation.suggestedImprovements.filter((_, i) => i !== idx)
-            };
-          }
-
-          return updatedSermon;
         }
-        return s;
-      }));
+
+        return updatedSermon;
+      });
     } catch (err) {
       console.error(err);
-      alert("Erro ao aplicar aperfeiçoamento pastoral.");
+      setToastNotice("Erro ao aplicar aperfeiçoamento pastoral.");
     } finally {
       setImprovingSuggestionIdx(null);
     }
@@ -2244,6 +2519,10 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
   };
 
   const toggleFavoriteSermon = async (id: string) => {
+    if (derivedDraftSermon && derivedDraftSermon.id === id) {
+      setDerivedDraftSermon(prev => (prev ? { ...prev, isFavorite: !prev.isFavorite, updatedAt: Date.now() } : prev));
+      return;
+    }
     const target = sermons.find(s => s.id === id);
     if (!target) return;
     const updated = { ...target, isFavorite: !target.isFavorite, updatedAt: Date.now() };
@@ -2879,21 +3158,32 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
 
                       {/* Subsídios Exegéticos & Sementes Homiléticas (Data-Binding com Consultor Teológico) */}
                       <div className="bg-[#FAF8F5] p-3.5 rounded-xl border border-[#5A5A40]/25 space-y-2">
-                        <div className="flex justify-between items-center">
+                        <div className="flex justify-between items-center gap-2 flex-wrap">
                           <label className="text-[11px] font-bold uppercase tracking-wider text-[#5A5A40] flex items-center gap-1.5">
                             <Feather className="w-3.5 h-3.5 text-[#5A5A40]" />
                             <span>Subsídios & Sementes Homiléticas</span>
                           </label>
-                          {theologicalNotes && (
+                          <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => setTheologicalNotes('')}
-                              className="text-[10px] text-red-600 hover:underline cursor-pointer font-medium"
-                              title="Limpar notas"
+                              onClick={() => setIsTheologicalChatFloating(true)}
+                              className="text-[10px] font-bold text-[#5A5A40] hover:text-[#2D2926] bg-white hover:bg-[#EFECE6] border border-[#E6E2DA] px-2 py-0.5 rounded-md transition-colors cursor-pointer flex items-center gap-1"
+                              title="Abrir Consultor Bíblico e Teológico em janela flutuante"
                             >
-                              Limpar
+                              <Maximize2 className="w-2.5 h-2.5" />
+                              <span>Consultor</span>
                             </button>
-                          )}
+                            {theologicalNotes && (
+                              <button
+                                type="button"
+                                onClick={() => setTheologicalNotes('')}
+                                className="text-[10px] text-red-600 hover:underline cursor-pointer font-medium"
+                                title="Limpar notas"
+                              >
+                                Limpar
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <p className="text-[10px] text-gray-500 leading-tight">
                           {theologicalNotes
@@ -2927,7 +3217,48 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
                   
                   {activeSermon ? (
                     <div className="bg-white rounded-xl border border-[#E6E2DA] shadow-sm overflow-hidden flex flex-col">
-                      
+
+                      {/* Derived Draft Non-Destructive Review Banner */}
+                      {isActiveSermonDerivedDraft && derivedDraftMeta && (
+                        <div className="non-printable bg-amber-50 border-b border-amber-200 px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center flex-wrap gap-2">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-200/70 text-amber-950 text-[10px] font-bold uppercase tracking-wider">
+                                <Sparkles className="w-3 h-3" />
+                                {derivedDraftMeta.mode === 'bible-study'
+                                  ? `Estudo Bíblico (${derivedDraftMeta.duration} min)`
+                                  : derivedDraftMeta.mode === 'custom'
+                                  ? `Personalizado (${derivedDraftMeta.duration} min)`
+                                  : `Versão ${derivedDraftMeta.duration} min`}
+                              </span>
+                              <span className="text-[11px] font-bold text-amber-950">
+                                Rascunho para revisão — Original preservado na Biblioteca
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-amber-900/90">
+                              Derivado de <strong>"{derivedDraftMeta.sourceTitle}"</strong> • Salve explicitamente abaixo para adicionar à sua Biblioteca sem sobrescrever o original.
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={handleSaveDerivedDraftToLibrary}
+                              className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-[#5A5A40] hover:bg-[#2D2926] text-white shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Bookmark className="w-3.5 h-3.5" />
+                              <span>Salvar na Biblioteca</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleDiscardDerivedDraft}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white hover:bg-red-50 text-gray-700 hover:text-red-700 border border-amber-300 transition-colors cursor-pointer"
+                            >
+                              Descartar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Interactive Header parameters showing style, version and date */}
                       <div className="non-printable bg-[#F5F2ED] py-4 px-6 border-b border-[#E6E2DA] flex flex-wrap justify-between items-center gap-3">
                         <div className="flex items-center gap-2">
@@ -4105,14 +4436,49 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
           )}
 
           {/* Tab 2: Study Resources & Interactive Theological Chat */}
-          {activeTab === 'study' && (
-            <div className="w-full flex-1 flex flex-col justify-center items-center">
-              <TheologicalChat
-                onSendToLaboratory={handleSendToLaboratory}
-                onInsertToSermon={(content, passage) => handleSendToLaboratory(content, undefined, passage)}
-              />
+          {activeTab === 'study' && isTheologicalChatFloating && (
+            <div className="w-full flex-1 flex flex-col justify-center items-center py-16">
+              <div className="bg-white border border-[#E6E2DA] rounded-2xl p-8 max-w-md w-full text-center space-y-4 shadow-sm">
+                <div className="w-12 h-12 rounded-xl bg-[#5A5A40]/10 text-[#5A5A40] flex items-center justify-center mx-auto">
+                  <BookOpenCheck className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <h2 className="text-base font-serif font-bold text-[#2D2926]">
+                    Consultor aberto em janela flutuante
+                  </h2>
+                  <p className="text-xs text-gray-500">
+                    Seu assunto ativo, histórico e rascunho permanecem preservados.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsTheologicalChatFloating(false)}
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-[#5A5A40] hover:bg-[#2D2926] text-white transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                >
+                  <Minimize2 className="w-3.5 h-3.5" />
+                  <span>Voltar para a Aba</span>
+                </button>
+              </div>
             </div>
           )}
+
+          {/* Persistent TheologicalChat host: preserves conversation, active topic, and input across floating toggle and tab navigation */}
+          <div
+            className={
+              isTheologicalChatFloating
+                ? 'block'
+                : activeTab === 'study'
+                ? 'w-full flex-1 flex flex-col justify-center items-center'
+                : 'hidden'
+            }
+          >
+            <TheologicalChat
+              isFloating={isTheologicalChatFloating}
+              onFloatingChange={setIsTheologicalChatFloating}
+              onSendToLaboratory={handleSendToLaboratory}
+              onInsertToSermon={(content, passage) => handleSendToLaboratory(content, undefined, passage)}
+            />
+          </div>
 
           {/* Tab 3: Themes Bank, suggested Hymns & Illustrations */}
           {activeTab === 'ideas' && (
@@ -4492,6 +4858,29 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
                 </div>
               </div>
 
+              {/* Derivation Status / Error Banners */}
+              {isDerivingSermon && (
+                <div className="bg-[#5A5A40] text-white px-4 py-3 rounded-xl shadow-sm flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 text-xs font-semibold">
+                    <RefreshCw className="w-4 h-4 animate-spin text-amber-300 shrink-0" />
+                    <span>Derivando nova variação na Oficina Homilética (o sermão original permanece intacto)...</span>
+                  </div>
+                </div>
+              )}
+
+              {deriveErrorNotice && (
+                <div className="bg-red-50 border border-red-200 text-red-900 px-4 py-3 rounded-xl flex items-center justify-between gap-3 text-xs">
+                  <span className="font-medium">{deriveErrorNotice}</span>
+                  <button
+                    type="button"
+                    onClick={() => setDeriveErrorNotice(null)}
+                    className="text-red-700 hover:text-red-950 font-bold cursor-pointer"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              )}
+
               {/* Grid listings of saved sermons */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredSermons.length > 0 ? (
@@ -4501,6 +4890,8 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
                       sermon={s}
                       isSelected={selectedSermonId === s.id}
                       isDeleting={sermonIdDeleting === s.id}
+                      isDeriving={derivingSermonId === s.id}
+                      isAnyDeriving={isDerivingSermon}
                       onSelect={(sermon) => {
                         setSelectedSermonId(sermon.id);
                         setActiveTab('workspace');
@@ -4515,6 +4906,12 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
                       onRequestDelete={(id) => setSermonIdDeleting(id)}
                       onConfirmDelete={(id) => deleteSermon(id)}
                       onCancelDelete={() => setSermonIdDeleting(null)}
+                      onDeriveDuration={handleQuickDeriveDuration}
+                      onDeriveBibleStudy={handleQuickDeriveBibleStudy}
+                      onOpenCustomizeDerive={(sermon) => {
+                        setDeriveModalError(null);
+                        setCustomizeSourceSermon(sermon);
+                      }}
                     />
                   ))
                 ) : (
@@ -5770,6 +6167,22 @@ service cloud.firestore {
           </button>
         </aside>
       )}
+
+      {/* Modal para Personalizar & Derivar Mensagem da Biblioteca */}
+      <DeriveSermonModal
+        isOpen={Boolean(customizeSourceSermon)}
+        sourceSermon={customizeSourceSermon}
+        initialMode="custom"
+        isSubmitting={isDerivingSermon}
+        errorMessage={deriveModalError}
+        onClose={() => {
+          if (!isDerivingSermon) {
+            setCustomizeSourceSermon(null);
+            setDeriveModalError(null);
+          }
+        }}
+        onSubmit={handleDeriveSermon}
+      />
 
     </div>
   );

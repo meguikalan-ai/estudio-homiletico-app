@@ -276,3 +276,34 @@ export interface GenerateThemesRequest {
   existingTitles?: string[];
 }
 
+export type SermonDerivationDuration = '20' | '30' | '40';
+export type SermonDerivationMode = 'duration' | 'bible-study' | 'custom';
+
+export interface SermonDerivationContext {
+  mode: SermonDerivationMode;
+  duration: SermonDerivationDuration;
+  sourceSermonId: string;
+  sourceTitle: string;
+  sourceScripture: string;
+  baseSummary?: string;
+  customNotes?: string;
+  targetAudience?: string;
+}
+
+export interface SermonDerivationConfig {
+  mode: SermonDerivationMode;
+  duration: SermonDerivationDuration;
+  audience: string;
+  style: Sermon['style'];
+  notes: string;
+}
+
+export interface SermonDerivationDraftMeta {
+  sourceSermonId: string;
+  sourceTitle: string;
+  sourceScripture: string;
+  mode: SermonDerivationMode;
+  duration: SermonDerivationDuration;
+  audience: string;
+}
+

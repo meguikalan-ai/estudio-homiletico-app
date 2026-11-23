@@ -516,12 +516,16 @@ Inspirado por gigantes da fé como Martyn Lloyd-Jones, John Stott, J. C. Ryle, J
 
 // 1. Generate Sermon Endpoint
 app.post("/api/gemini/generate-sermon", async (req, res) => {
-  const { title, theme, scripture, style, churchProfile, audience, bibleVersion, isOutline, seriesName, churchProfileDetails, duration, theologicalNotes } = req.body;
+  const { title, theme, scripture, style, churchProfile, audience, bibleVersion, isOutline, seriesName, churchProfileDetails, duration, theologicalNotes, derivationContext } = req.body;
 
   if (!ai) {
     const mockRes = getMockSermon(title, theme, scripture, style, churchProfile, audience, bibleVersion, isOutline, seriesName);
+    const isBibleStudy = derivationContext?.mode === 'bible-study';
     return res.status(200).json({
       ...mockRes,
+      title: isBibleStudy && !String(mockRes.title || '').toLowerCase().includes('estudo')
+        ? `Estudo Bíblico: ${mockRes.title}`
+        : mockRes.title,
       duration: duration || '30',
       fallbackActive: true,
       fallbackReason: "Chave de API do Gemini (GEMINI_API_KEY) não configurada neste ambiente. O simulador homilético de contingência assumiu a geração do sermão."
@@ -600,6 +604,17 @@ ${theologicalNotes ? `
 - SUBSÍDIOS EXEGÉTICOS & SEMENTES HOMILÉTICAS (CONSULTOR TEOLÓGICO 1689):
 ${theologicalNotes}
 (MANDATÓRIO: Incorpore organicamente estes subsídios exegéticos, termos originais grego/hebraico, notas teológicas e sementes homiléticas na introdução, contexto e divisões expositivas do sermão!)` : ''}
+${derivationContext ? `
+- MODO DE DERIVAÇÃO A PARTIR DE MENSAGEM BASE DA BIBLIOTECA:
+  * Origem: "${derivationContext.sourceTitle || title || 'Mensagem Base'}" (${derivationContext.sourceScripture || scripture})
+  * Objetivo da derivação: ${derivationContext.mode === 'bible-study'
+    ? 'ESTUDO BÍBLICO PARTICIPATIVO PARA PEQUENO GRUPO / CÉLULA (PG): transforme a mensagem base em um roteiro claro e caloroso de estudo bíblico em grupo. Mantenha a fidelidade exegética ao texto, mas no campo "application" de cada ponto e em "applications", inclua perguntas reflexivas abertas para diálogo em grupo ("Pergunta para Discussão em Grupo:") e passos práticos de comunhão e oração mútua.'
+    : derivationContext.mode === 'custom'
+    ? `MENSAGEM PERSONALIZADA (${derivationContext.duration || duration || '30'} minutos) para o público/ocasião "${derivationContext.targetAudience || audience}".`
+    : `ADAPTAÇÃO DE DURAÇÃO PARA ${derivationContext.duration || duration || '30'} MINUTOS: preserve o núcleo teológico e exegético da mensagem base, recalibrando extensão, ritmo oral e objetividade exatamente para ${derivationContext.duration || duration || '30'} minutos de exposição.`}${derivationContext.baseSummary ? `
+  * Síntese e estrutura da mensagem base a preservar/adaptar:
+${derivationContext.baseSummary}` : ''}${derivationContext.customNotes ? `
+  * Observação pastoral específica do usuário: ${derivationContext.customNotes}` : ''}` : ''}
 
 ${durationGuideline}
 ${rulesOfDuration}
@@ -721,9 +736,14 @@ Certifique-se de que o plano seja extremamente fiel às escrituras, fluido para 
   } catch (error: any) {
     console.warn("Sermon Generation Error (falling back to simulated sermon):", error);
     const mockSermon = getMockSermon(title, theme, scripture, style, churchProfile, audience, bibleVersion, isOutline, seriesName);
+    const isBibleStudy = derivationContext?.mode === 'bible-study';
     const errMsg = error?.message || String(error);
     return res.json({
       ...mockSermon,
+      title: isBibleStudy && !String(mockSermon.title || '').toLowerCase().includes('estudo')
+        ? `Estudo Bíblico: ${mockSermon.title}`
+        : mockSermon.title,
+      duration: duration || '30',
       fallbackActive: true,
       fallbackReason: `Falha temporária ao consultar a IA (${errMsg}). O simulador teológico de contingência assumiu a geração da pregação.`
     });

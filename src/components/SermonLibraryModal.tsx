@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
-import { Trash2, Search, X, RefreshCw } from 'lucide-react';
-import { Sermon } from '../types';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Trash2, Search, X, RefreshCw, Sparkles, ChevronDown, Clock, BookOpen, SlidersHorizontal, Loader2 } from 'lucide-react';
+import { Sermon, SermonDerivationDuration } from '../types';
 
 /**
  * Expressão regular canônica para identificar referências bíblicas
@@ -60,6 +60,8 @@ export interface SermonCardProps {
   sermon: Sermon;
   isSelected?: boolean;
   isDeleting?: boolean;
+  isDeriving?: boolean;
+  isAnyDeriving?: boolean;
   onSelect: (sermon: Sermon) => void;
   onOpenPulpit: (sermon: Sermon) => void;
   onDuplicate: (sermon: Sermon) => void;
@@ -68,6 +70,9 @@ export interface SermonCardProps {
   onRequestDelete: (id: string) => void;
   onConfirmDelete: (id: string) => void;
   onCancelDelete: () => void;
+  onDeriveDuration?: (sermon: Sermon, duration: SermonDerivationDuration) => void;
+  onDeriveBibleStudy?: (sermon: Sermon) => void;
+  onOpenCustomizeDerive?: (sermon: Sermon) => void;
 }
 
 /**
@@ -76,12 +81,14 @@ export interface SermonCardProps {
  * - Linha de Metadados: Texto bíblico limpo (ex: "Lucas 18:1-8") com badge da versão (ex: "AEC"), data e série.
  * - Subtítulo / Tema Central: Padronizado em linha única concisa (line-clamp-1).
  * - Divisor Sutil: Separa o bloco de texto da barra de ações rápidas.
- * - Rodapé de Ações: Botões agrupados (Carregar Estudo, Púlpito, Copiar, Arquivar e Apagar).
+ * - Rodapé de Ações: Botões agrupados (Carregar Estudo, Púlpito, Derivar, Copiar, Arquivar e Apagar).
  */
 export const SermonLibraryCard: React.FC<SermonCardProps> = ({
   sermon: s,
   isSelected = false,
   isDeleting = false,
+  isDeriving = false,
+  isAnyDeriving = false,
   onSelect,
   onOpenPulpit,
   onDuplicate,
@@ -89,11 +96,38 @@ export const SermonLibraryCard: React.FC<SermonCardProps> = ({
   onToggleArchive,
   onRequestDelete,
   onConfirmDelete,
-  onCancelDelete
+  onCancelDelete,
+  onDeriveDuration,
+  onDeriveBibleStudy,
+  onOpenCustomizeDerive
 }) => {
   const { reference, version } = normalizeCardBibleMetadata(s.scripture, s.bibleVersion);
   const cleanTheme = normalizeCardTheme(s.theme);
   const formattedDate = new Date(s.date).toLocaleDateString('pt-BR');
+  const [deriveMenuOpen, setDeriveMenuOpen] = useState(false);
+  const deriveMenuRef = useRef<HTMLDivElement>(null);
+
+  const hasDeriveActions = Boolean(onDeriveDuration || onDeriveBibleStudy || onOpenCustomizeDerive);
+
+  useEffect(() => {
+    if (!deriveMenuOpen) return;
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (deriveMenuRef.current && !deriveMenuRef.current.contains(event.target as Node)) {
+        setDeriveMenuOpen(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setDeriveMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [deriveMenuOpen]);
 
   return (
     <div 
@@ -196,8 +230,8 @@ export const SermonLibraryCard: React.FC<SermonCardProps> = ({
         </div>
       ) : (
         <div className="pt-2.5 border-t border-[#F0ECE1] flex flex-wrap justify-between items-center text-xs w-full gap-2">
-          {/* Ações principais (Estudo & Púlpito) */}
-          <div className="flex items-center gap-2">
+          {/* Ações principais (Estudo, Púlpito & Derivar) */}
+          <div className="flex items-center flex-wrap gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={() => onSelect(s)}
@@ -218,6 +252,120 @@ export const SermonLibraryCard: React.FC<SermonCardProps> = ({
             >
               <span>📖 Púlpito</span>
             </button>
+
+            {hasDeriveActions && (
+              <div className="relative" ref={deriveMenuRef}>
+                <button
+                  type="button"
+                  disabled={isAnyDeriving}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDeriveMenuOpen(prev => !prev);
+                  }}
+                  aria-expanded={deriveMenuOpen}
+                  aria-haspopup="menu"
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded border text-xs font-bold transition-colors cursor-pointer disabled:opacity-50 ${
+                    isDeriving
+                      ? 'bg-[#5A5A40] text-white border-[#5A5A40]'
+                      : deriveMenuOpen
+                      ? 'bg-[#5A5A40]/15 text-[#2D2926] border-[#5A5A40]'
+                      : 'bg-stone-50 hover:bg-[#5A5A40]/10 text-[#5A5A40] border-[#E6E2DA]'
+                  }`}
+                  title="Derivar versão de 20/30/40 min, Estudo Bíblico ou personalizar"
+                >
+                  {isDeriving ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>Derivando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3 h-3" />
+                      <span>Derivar</span>
+                      <ChevronDown className={`w-3 h-3 transition-transform ${deriveMenuOpen ? 'rotate-180' : ''}`} />
+                    </>
+                  )}
+                </button>
+
+                {deriveMenuOpen && (
+                  <div
+                    role="menu"
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute left-0 bottom-full mb-1.5 z-40 w-60 bg-white border border-[#E6E2DA] rounded-xl shadow-xl p-2 space-y-1.5 text-left"
+                  >
+                    {onDeriveDuration && (
+                      <div className="px-1.5 pt-0.5 pb-1.5 border-b border-[#F0ECE1]">
+                        <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                          <Clock className="w-3 h-3 text-[#5A5A40]" />
+                          <span>Gerar versão por duração</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1">
+                          {(['20', '30', '40'] as SermonDerivationDuration[]).map((dur) => {
+                            const isCurrent = s.duration === dur;
+                            return (
+                              <button
+                                key={dur}
+                                type="button"
+                                role="menuitem"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setDeriveMenuOpen(false);
+                                  onDeriveDuration(s, dur);
+                                }}
+                                className={`px-2 py-1.5 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer text-center ${
+                                  isCurrent
+                                    ? 'bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100'
+                                    : 'bg-[#FDFBF7] border-[#E6E2DA] text-[#2D2926] hover:bg-[#5A5A40] hover:text-white hover:border-[#5A5A40]'
+                                }`}
+                                title={`Gerar versão de ${dur} minutos sem alterar o original`}
+                              >
+                                {dur} min
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {onDeriveBibleStudy && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDeriveMenuOpen(false);
+                          onDeriveBibleStudy(s);
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#2D2926] hover:bg-[#5A5A40]/10 flex items-center gap-2 transition-colors cursor-pointer"
+                      >
+                        <BookOpen className="w-3.5 h-3.5 text-[#5A5A40] shrink-0" />
+                        <span>Estudo Bíblico (PG)</span>
+                      </button>
+                    )}
+
+                    {onOpenCustomizeDerive && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDeriveMenuOpen(false);
+                          onOpenCustomizeDerive(s);
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#2D2926] hover:bg-[#5A5A40]/10 flex items-center gap-2 transition-colors cursor-pointer"
+                      >
+                        <SlidersHorizontal className="w-3.5 h-3.5 text-[#5A5A40] shrink-0" />
+                        <span>Personalizar Mensagem...</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           
           {/* Ações utilitárias discretas */}
@@ -278,12 +426,16 @@ export interface SermonLibraryModalProps {
   onClose: () => void;
   sermons: Sermon[];
   selectedSermonId?: string | null;
+  derivingSermonId?: string | null;
   onSelectSermon: (sermon: Sermon) => void;
   onOpenPulpit: (sermon: Sermon) => void;
   onDuplicateSermon: (sermon: Sermon) => void;
   onToggleFavorite: (id: string) => void;
   onToggleArchive: (id: string) => void;
   onDeleteSermon: (id: string) => void;
+  onDeriveDuration?: (sermon: Sermon, duration: SermonDerivationDuration) => void;
+  onDeriveBibleStudy?: (sermon: Sermon) => void;
+  onOpenCustomizeDerive?: (sermon: Sermon) => void;
   onForceCloudSync?: () => void;
   isCloudSyncing?: boolean;
 }
@@ -296,12 +448,16 @@ export const SermonLibraryModal: React.FC<SermonLibraryModalProps> = ({
   onClose,
   sermons,
   selectedSermonId,
+  derivingSermonId = null,
   onSelectSermon,
   onOpenPulpit,
   onDuplicateSermon,
   onToggleFavorite,
   onToggleArchive,
   onDeleteSermon,
+  onDeriveDuration,
+  onDeriveBibleStudy,
+  onOpenCustomizeDerive,
   onForceCloudSync,
   isCloudSyncing = false
 }) => {
@@ -388,6 +544,8 @@ export const SermonLibraryModal: React.FC<SermonLibraryModalProps> = ({
                   sermon={sermon}
                   isSelected={selectedSermonId === sermon.id}
                   isDeleting={deletingId === sermon.id}
+                  isDeriving={derivingSermonId === sermon.id}
+                  isAnyDeriving={Boolean(derivingSermonId)}
                   onSelect={onSelectSermon}
                   onOpenPulpit={onOpenPulpit}
                   onDuplicate={onDuplicateSermon}
@@ -399,6 +557,9 @@ export const SermonLibraryModal: React.FC<SermonLibraryModalProps> = ({
                     setDeletingId(null);
                   }}
                   onCancelDelete={() => setDeletingId(null)}
+                  onDeriveDuration={onDeriveDuration}
+                  onDeriveBibleStudy={onDeriveBibleStudy}
+                  onOpenCustomizeDerive={onOpenCustomizeDerive}
                 />
               ))}
             </div>

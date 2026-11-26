@@ -38,6 +38,7 @@ async function generateJSON(params: {
   temperature?: number;
   thinkingLevel?: ThinkingLevel;
   timeoutMs?: number;
+  fallbackTimeoutMs?: number;
 }): Promise<any> {
   if (!ai) {
     throw new Error("Gemini API Client not initialized (Simulation mode).");
@@ -49,7 +50,11 @@ async function generateJSON(params: {
     (m, idx, arr) => arr.indexOf(m) === idx
   );
 
+  const primaryTimeoutMs = params.timeoutMs ?? 70000;
+  const fallbackTimeoutMs = params.fallbackTimeoutMs ?? Math.max(75000, params.timeoutMs ?? 75000);
+
   let lastError: any = null;
+  const attemptErrors: Array<{ model: string; reason: string; isTimeout: boolean }> = [];
 
   for (let i = 0; i < modelsToTry.length; i++) {
     const currentModel = modelsToTry[i];
@@ -59,11 +64,11 @@ async function generateJSON(params: {
 
     while (attempt < maxRetriesForModel) {
       try {
-        console.log(`[generateJSON] Attempting API call with model (${i + 1}/${modelsToTry.length}), attempt ${attempt + 1}/${maxRetriesForModel}: ${currentModel}`);
+        const attemptTimeoutMs = i === 0 ? primaryTimeoutMs : fallbackTimeoutMs;
+        const timeoutSeconds = Math.round(attemptTimeoutMs / 1000);
+        console.log(`[generateJSON] Attempting API call with model (${i + 1}/${modelsToTry.length}), attempt ${attempt + 1}/${maxRetriesForModel}: ${currentModel} (cutoff ${timeoutSeconds}s)`);
 
         const controller = new AbortController();
-        const attemptTimeoutMs = params.timeoutMs ?? (i === 0 ? 45000 : 30000);
-        const timeoutSeconds = Math.round(attemptTimeoutMs / 1000);
 
         const modelConfig: any = {
           responseMimeType: "application/json",
@@ -87,7 +92,9 @@ async function generateJSON(params: {
         const timeoutPromise = new Promise<never>((_, reject) => {
           timerId = setTimeout(() => {
             controller.abort();
-            reject(new Error(`Timeout na chamada do modelo ${currentModel} após ${timeoutSeconds}s.`));
+            const timeoutErr = new Error(`Timeout na chamada do modelo ${currentModel} após ${timeoutSeconds}s.`);
+            timeoutErr.name = "TimeoutError";
+            reject(timeoutErr);
           }, attemptTimeoutMs);
         });
 
@@ -113,7 +120,14 @@ async function generateJSON(params: {
         return JSON.parse(cleanText);
       } catch (error: any) {
         lastError = error;
-        const errorStr = (error?.message || String(error)).toLowerCase();
+        const rawMessage = error?.message || String(error);
+        const errorStr = rawMessage.toLowerCase();
+
+        const isTimeout =
+          error?.name === "AbortError" ||
+          error?.name === "TimeoutError" ||
+          errorStr.includes("timeout") ||
+          errorStr.includes("aborted");
 
         // Check for 503 Service Unavailable / Spikes in demand / Model overload
         const isTemporaryUnavailable =
@@ -142,10 +156,18 @@ async function generateJSON(params: {
           errorStr.includes("rate limit") ||
           errorStr.includes("429");
 
-        if (isTemporaryUnavailable) {
-          console.warn(`[generateJSON] Temporary high-demand/503 on ${currentModel}: ${error.message || error}`);
+        if (isTimeout) {
+          console.warn(`[generateJSON] Timeout on ${currentModel}: ${rawMessage}`);
+          attemptErrors.push({ model: currentModel, reason: rawMessage, isTimeout: true });
+          if (i < modelsToTry.length - 1) {
+            console.log(`[generateJSON] Clean timeout transition: Immediately routing to next model in queue: ${modelsToTry[i + 1]}`);
+          }
+          break;
+        } else if (isTemporaryUnavailable) {
+          console.warn(`[generateJSON] Temporary high-demand/503 on ${currentModel}: ${rawMessage}`);
           // For high-demand spikes, immediately switch to the next fallback model in line
           if (i < modelsToTry.length - 1) {
+            attemptErrors.push({ model: currentModel, reason: `503/alta demanda (${rawMessage})`, isTimeout: false });
             console.log(`[generateJSON] Fast fallback from 503: Immediately routing to next model in queue: ${modelsToTry[i + 1]}`);
             break; // Break the retry loop for this model, immediately try the next model
           } else {
@@ -157,18 +179,20 @@ async function generateJSON(params: {
               await new Promise((resolve) => setTimeout(resolve, waitTime));
               continue;
             }
+            attemptErrors.push({ model: currentModel, reason: `503/alta demanda (${rawMessage})`, isTimeout: false });
             break;
           }
         } else if (isQuotaOrCongestion) {
           attempt++;
           const waitTime = Math.pow(2.5, attempt) * 1000 + Math.random() * 500; // Exponential backoff with jitter
-          console.warn(`[generateJSON] Quota limit/RESOURCE_EXHAUSTED (429) detected on ${currentModel} (attempt ${attempt}/${maxRetriesForModel}). Error: ${error.message || error}`);
-          
+          console.warn(`[generateJSON] Quota limit/RESOURCE_EXHAUSTED (429) detected on ${currentModel} (attempt ${attempt}/${maxRetriesForModel}). Error: ${rawMessage}`);
+
           if (attempt < maxRetriesForModel) {
             console.log(`[generateJSON] Retrying ${currentModel} in ${Math.round(waitTime)}ms to recover quota...`);
             await new Promise((resolve) => setTimeout(resolve, waitTime));
             continue; // Retry this model
           } else {
+            attemptErrors.push({ model: currentModel, reason: `429/cota (${rawMessage})`, isTimeout: false });
             console.warn(`[generateJSON] Exceeded maximum retries (${maxRetriesForModel}) for ${currentModel}.`);
             if (i < modelsToTry.length - 1) {
               console.warn(`[generateJSON] Fast fallback: Attempting next model in queue: ${modelsToTry[i + 1]}`);
@@ -177,7 +201,8 @@ async function generateJSON(params: {
           }
         } else {
           // Fallback for general errors to guarantee continuous running experience
-          console.warn(`[generateJSON] General API error on model ${currentModel}: ${error.message || error}`);
+          attemptErrors.push({ model: currentModel, reason: rawMessage, isTimeout: false });
+          console.warn(`[generateJSON] General API error on model ${currentModel}: ${rawMessage}`);
           if (i < modelsToTry.length - 1) {
             console.warn(`[generateJSON] Robust fallback: Attempting next model: ${modelsToTry[i + 1]}`);
             break; // Break the attempt loop to try the next model
@@ -189,8 +214,56 @@ async function generateJSON(params: {
     }
   }
 
-  // If all attempts failed, throw the last error so endpoints can trigger simulation mode gracefully
-  throw lastError || new Error("Failed to generate content with all configured Gemini models.");
+  // If all attempts failed, throw a consolidated error preserving transparent reasons for endpoints/logs
+  const consolidatedMsg =
+    attemptErrors.length > 0
+      ? attemptErrors.map((e) => `${e.model}: ${e.reason}`).join(" | ")
+      : (lastError?.message || "Failed to generate content with all configured Gemini models.");
+  const finalError = new Error(consolidatedMsg) as Error & { isTimeout?: boolean; status?: number };
+  finalError.isTimeout = attemptErrors.some((e) => e.isTimeout);
+  finalError.status = lastError?.status || lastError?.statusCode || lastError?.error?.code;
+  throw finalError;
+}
+
+function formatFallbackReason(contextLabel: string, error: unknown): string {
+  const errObj = error as {
+    message?: string;
+    status?: number;
+    statusCode?: number;
+    error?: { code?: number };
+    isTimeout?: boolean;
+  } | null;
+  const rawMsg = (errObj?.message || String(error || "")).trim();
+  const lower = rawMsg.toLowerCase();
+  const isTimeout = Boolean(errObj?.isTimeout) || lower.includes("timeout") || lower.includes("aborted");
+  const isQuota =
+    errObj?.status === 429 ||
+    errObj?.statusCode === 429 ||
+    errObj?.error?.code === 429 ||
+    lower.includes("429") ||
+    lower.includes("resource_exhausted") ||
+    lower.includes("quota") ||
+    lower.includes("cota");
+  const isUnavailable =
+    errObj?.status === 503 ||
+    errObj?.statusCode === 503 ||
+    errObj?.error?.code === 503 ||
+    lower.includes("503") ||
+    lower.includes("unavailable") ||
+    lower.includes("high demand") ||
+    lower.includes("spikes in demand");
+
+  const shortDetail = rawMsg ? ` (${rawMsg.slice(0, 240)})` : "";
+  if (isTimeout) {
+    return `Tempo limite excedido na consulta à IA${shortDetail}. ${contextLabel}`;
+  }
+  if (isQuota) {
+    return `Limite de cota da API Gemini atingido (429)${shortDetail}. ${contextLabel}`;
+  }
+  if (isUnavailable) {
+    return `Instabilidade momentânea ou alta demanda no servidor da IA (503)${shortDetail}. ${contextLabel}`;
+  }
+  return `Falha temporária ao consultar a IA${shortDetail}. ${contextLabel}`;
 }
 
 // Theology and Terminology Constants to inject into LLM prompts
@@ -383,7 +456,7 @@ Ao longo de parágrafos fluidos, contínuos e coesos — SEM NENHUMA marcação 
   * Nas pressões e tentações do trabalho: conduta ética inegociável, recusa de atalhos desonestos, mentiras convenientes e malícias profissionais, exercendo a vocação com honestidade, diligência e temor do Senhor;
   * Nas finanças e administração do dinheiro: combate incisivo à avareza, ao consumismo ansioso e à ilusão da autossuficiência econômica, cultivando contentamento piedoso, retidão fiscal e generosidade sacrificial;
   * Na vizinhança e convívio social: testemunho límpido de integridade, paciência com os difíceis, compaixão operosa com os necessitados e evangelismo vivido através de atitudes irrepreensíveis;
-  * Nas lutas íntimas e nas angústias da alma: confronto direto e corajoso de pecados ocultos e vícios secretos que ninguém vê, e consolo profundamente compassivo para os quebrantados pela depressão, crises de ansiedade, esgotamento mental (burnout) e culpas paralisantes, acolhendo-os no descanso soberano da justificação pela fé no Cordeiro de Deus.
+  * Nas lutas íntimas e nas angústias da alma: confronto direto e corajoso de pecados ocultos e vícios secretos que ninguém vê, e consolo profundamente compassivo para os quebrantados pela depressão, crises de ansiedade, esgotamento físico e mental e culpas paralisantes, acolhendo-os no descanso soberano da justificação pela fé no Cordeiro de Deus.
 
 5. DIVISÕES DINÂMICAS E ENVOLVENTES (ORALIDADE VIGOROSA E CLAREZA EXPOSITIVA):
 - Cada divisão expositiva deve manter um ritmo vivo, cativante e de alta tração homilética, banindo o tédio de pregações monótonas e a frieza de ensaios acadêmicos.
@@ -406,6 +479,14 @@ Regras de Aplicação:
 - Quando houver mais de um versículo, use (vv.7-8) ou similar.
 - Quando houver divisões parciais, use "a" ou "b": (v.5a), (v.5b).
 - Equilíbrio Oral: As referências devem ser discretas, soar naturais e não interromper a pregação de forma cansativa. Evite poluição ou repetição excessiva em cada frase.
+`;
+
+const PURE_PORTUGUESE_PULPIT_GUIDELINE = `
+DIRETRIZ DE LINGUAGEM EM PORTUGUÊS PURO E ACESSÍVEL (MANDATÓRIO):
+- Escreva integralmente em português do Brasil claro, digno, natural e idiomático, adequado à pregação expositiva de púlpito e plenamente compreensível para todo o auditório (de jovens a idosos).
+- PROIBIÇÃO EXPRESSA DE ANGLICISMOS E ESTRANGEIRISMOS CORPORATIVOS OU POPULARES: É terminantemente proibido usar palavras e expressões em inglês como "sprint", "mindset", "insight", "feedback", "trigger", "reset", "burnout", "status", "check-in", "coaching", "performance", "stress", "deadline", "timing", "background", "briefing", "workshop", "networking", "marketing", "feeling", "target", "gap", "upgrade", "lifestyle", "mood", "vibe", "hype", "overthinking", "multitasking", "follow-up" e similares em qualquer parte do sermão (título, tema, introdução, contexto, exposição, ilustrações, aplicações, conclusão e apelo).
+- Substitua sempre esses termos por vocabulário vivo, natural e exato em português (ex.: "mentalidade" ou "modo de pensar", "discernimento" ou "percepção", "retorno", "gatilho", "recomeço", "esgotamento", "prestígio" ou "posição", "acompanhamento", "desempenho", "prazo", "momento oportuno").
+- EXCEÇÃO EXEGÉTICA LEGÍTIMA: Preserve exclusivamente os termos bíblicos originais transliterados do hebraico, aramaico e grego koiné (ex.: hesed, shalom, agape, metanoia, charis, hilasterion) quando explicados de forma pastoral e imediatamente traduzidos para o ouvinte.
 `;
 
 const ISALTINO_STYLE_GUIDELINE = `
@@ -519,18 +600,114 @@ Inspirado por gigantes da fé como Martyn Lloyd-Jones, John Stott, J. C. Ryle, J
 
 // API Routes
 
+function buildDerivationPromptDirective(
+  derivationContext: {
+    mode?: string;
+    duration?: string;
+    sourceTitle?: string;
+    sourceScripture?: string;
+    targetAudience?: string;
+    baseSummary?: string;
+    customNotes?: string;
+  },
+  fallbackTitle: string,
+  fallbackScripture: string,
+  fallbackAudience: string,
+  fallbackDuration: string
+): string {
+  const mode = derivationContext.mode || 'duration';
+  const targetDuration = derivationContext.duration || fallbackDuration || '30';
+  let goalInstruction = '';
+
+  switch (mode) {
+    case 'bible-study':
+      goalInstruction =
+        'ESTUDO BÍBLICO PARTICIPATIVO PARA PEQUENO GRUPO / CÉLULA (PG): transforme a mensagem base em um roteiro claro e caloroso de estudo bíblico em grupo. Mantenha a fidelidade exegética ao texto, mas no campo "application" de cada ponto e em "applications", inclua perguntas reflexivas abertas para diálogo em grupo ("Pergunta para Discussão em Grupo:") e passos práticos de comunhão e oração mútua.';
+      break;
+    case 'devotional':
+      goalInstruction =
+        'DEVOCIONAL PASTORAL BREVE (5 A 10 MINUTOS): adapte a mensagem base para uma reflexão concisa, calorosa e profunda (ideal para visitas, reuniões rápidas ou devocional familiar). Use no máximo 2 divisões curtas centradas em 1 verdade principal, introdução breve, contexto mínimo essencial, aplicação imediata em linguagem simples e encerre o campo "pastoralAppeal" como uma Oração Pastoral curta e reverente.';
+      break;
+    case 'pulpit-card':
+      goalInstruction =
+        'CARTÃO DE PÚLPITO / ESBOÇO CONDENSADO: transforme a mensagem base em um esqueleto rápido e pregável para leitura dinâmica no púlpito (sem texto corrido longo). Em cada divisão, mantenha "title" isolado, "precedingTransition" em 1 frase curta, e escreva "explanation" em formato de tópicos curtos e diretos contendo: Frase-Âncora da divisão, Palavras-Chave da exegese (hebraico/grego) e Referências bíblicas de apoio. Em "application", traga apenas o direcionamento direto em 2 a 3 linhas curtas.';
+      break;
+    case 'ebd':
+      goalInstruction =
+        'LIÇÃO DE ESCOLA BÍBLICA DOMINICAL (EBD): estruture a mensagem como uma aula bíblica didática e doutrinariamente sólida. Inicie "introduction" apresentando o Objetivo Pedagógico da Lição e uma ponte inicial; desenvolva o "biblicalContext" com panorama histórico-doutrinário; nos pontos expositivos, integre ensino claro em "explanation" e inclua em "application" obrigatoriamente uma "Pergunta para a Classe:" seguida de "Guia de Resposta para o Professor:"; liste em "applications" os pontos de fixação da lição.';
+      break;
+    case 'catechetical':
+      goalInstruction =
+        'ESTUDO CATEQUÉTICO (PERGUNTAS E RESPOSTAS DOUTRINÁRIAS): organize todo o ensino bíblico da passagem em formato catequético clássico de Perguntas e Respostas para instruir, esclarecer e firmar o conhecimento doutrinário da igreja (semelhante aos catecismos históricos, mantendo fidelidade exegética ao texto). Em "introduction", apresente a síntese doutrinária central e o propósito catequético do estudo. Em "biblicalContext", explique o fundamento bíblico e canônico da doutrina na passagem. Em cada divisão de "expositoryPoints", escreva "explanation" em pares explícitos iniciados por "Pergunta:" (clara, direta e memorizável) e "Resposta:" (doutrinariamente precisa, acessível e apoiada por referências bíblicas) — usando 2 a 3 pares por divisão — e em "application" apresente o "Uso Doutrinário e Prático:" explicando como essa verdade firma a fé e sustenta a piedade. Liste em "applications" de 3 a 5 verdades doutrinárias curtas para memorizar, e em "pastoralAppeal" faça uma exortação pastoral à firmeza na sã doutrina.';
+      break;
+    case 'evangelistic':
+      goalInstruction =
+        'ROTEIRO EVANGELÍSTICO (VISITANTES E OCASIÕES ESPECIAIS): adapte a mensagem para ser perfeitamente compreensível por visitantes e não-cristãos, eliminando jargões eclesiásticos internos. Parta de uma ponte existencial universal na introdução, conduza progressivamente da condição humana ao sacrifício redentor de Jesus Cristo e apresente em "pastoralAppeal" um convite claro, respeitoso e direto à fé e ao arrependimento.';
+      break;
+    case 'counseling':
+      goalInstruction =
+        'GUIA DE DISCIPULADO & ACONSELHAMENTO INDIVIDUAL (1-a-1): transforme a mensagem em um roteiro pastoral de cuidado da alma para conversa individual. Inicie "introduction" com acolhimento bíblico empático; em cada divisão, apresente em "explanation" a Verdade Consoladora e o Diagnóstico do Coração à luz do texto, e em "application" traga Passos Bíblicos de Obediência e uma pergunta reflexiva pessoal; liste em "applications" práticas concretas para a semana.';
+      break;
+    case 'post-service':
+      goalInstruction =
+        'RESUMO PÓS-CULTO PARA BOLETIM / WHATSAPP DA IGREJA: sintetize a mensagem pregada em formato claro e compartilhável para edificação semanal da igreja. Em "introduction", escreva um resumo coeso da mensagem em 2 parágrafos curtos; nos pontos expositivos, apresente 3 Pontos-Chave para Relembrar com meditação breve em "application"; em "applications", forneça um Guia de Leitura e Oração de Segunda a Sexta (5 itens curtos, um para cada dia).';
+      break;
+    default:
+      goalInstruction = `ADAPTAÇÃO DE DURAÇÃO PARA ${targetDuration} MINUTOS: preserve o núcleo teológico e exegético da mensagem base, recalibrando extensão, ritmo oral e objetividade exatamente para ${targetDuration} minutos de exposição (público: "${derivationContext.targetAudience || fallbackAudience}").`;
+      break;
+  }
+
+  return `
+- MODO DE DERIVAÇÃO A PARTIR DE MENSAGEM BASE DA BIBLIOTECA:
+  * Origem: "${derivationContext.sourceTitle || fallbackTitle || 'Mensagem Base'}" (${derivationContext.sourceScripture || fallbackScripture})
+  * Público-alvo: ${derivationContext.targetAudience || fallbackAudience}
+  * Objetivo da derivação: ${goalInstruction}${derivationContext.baseSummary ? `
+  * Síntese e estrutura da mensagem base a preservar/adaptar:
+${derivationContext.baseSummary}` : ''}${derivationContext.customNotes ? `
+  * Observação pastoral específica: ${derivationContext.customNotes}` : ''}`;
+}
+
+function applyDerivationFallbackDecorators<T extends { title?: string; tags?: string[] }>(
+  mockSermon: T,
+  derivationContext?: { mode?: string }
+): T {
+  const mode = derivationContext?.mode;
+  if (!mode || mode === 'duration' || mode === 'custom') return mockSermon;
+
+  const prefixMap: Record<string, string> = {
+    'bible-study': 'Estudo Bíblico: ',
+    devotional: 'Devocional: ',
+    'pulpit-card': 'Cartão de Púlpito: ',
+    ebd: 'Lição EBD: ',
+    catechetical: 'Estudo Catequético: ',
+    evangelistic: 'Mensagem Evangelística: ',
+    counseling: 'Aconselhamento 1-a-1: ',
+    'post-service': 'Resumo Pós-Culto: '
+  };
+  const prefix = prefixMap[mode];
+  const rawTitle = String(mockSermon.title || '').trim();
+  const nextTitle =
+    prefix && !rawTitle.toLowerCase().startsWith(prefix.toLowerCase().replace(':', '').trim())
+      ? `${prefix}${rawTitle}`
+      : rawTitle;
+
+  return {
+    ...mockSermon,
+    title: nextTitle
+  };
+}
+
 // 1. Generate Sermon Endpoint
 app.post("/api/gemini/generate-sermon", async (req, res) => {
   const { title, theme, scripture, style, churchProfile, audience, bibleVersion, isOutline, seriesName, churchProfileDetails, duration, theologicalNotes, derivationContext } = req.body;
 
   if (!ai) {
-    const mockRes = getMockSermon(title, theme, scripture, style, churchProfile, audience, bibleVersion, isOutline, seriesName);
-    const isBibleStudy = derivationContext?.mode === 'bible-study';
+    const mockRes = applyDerivationFallbackDecorators(
+      getMockSermon(title, theme, scripture, style, churchProfile, audience, bibleVersion, isOutline, seriesName),
+      derivationContext
+    );
     return res.status(200).json({
       ...mockRes,
-      title: isBibleStudy && !String(mockRes.title || '').toLowerCase().includes('estudo')
-        ? `Estudo Bíblico: ${mockRes.title}`
-        : mockRes.title,
       duration: duration || '30',
       fallbackActive: true,
       fallbackReason: "Chave de API do Gemini (GEMINI_API_KEY) não configurada neste ambiente. O simulador homilético de contingência assumiu a geração do sermão."
@@ -539,6 +716,13 @@ app.post("/api/gemini/generate-sermon", async (req, res) => {
 
   let durationGuideline = '';
   switch (duration) {
+    case '10':
+      durationGuideline = `
+- DURAÇÃO MANDATÓRIA: DEVOCIONAL BREVE DE 5 A 10 MINUTOS (CONCISO, ACOLHEDOR E DIRETO).
+  * Foque em 1 ideia central luminosa a partir da passagem, com no máximo 2 tópicos breves e aplicação imediata para o dia.
+  * Evite digressões longas; mantenha profundidade espiritual com economia de palavras e calor pastoral.
+`;
+      break;
     case '20':
       durationGuideline = `
 - DURAÇÃO MANDATÓRIA: SERMÃO DE 20 MINUTOS (OBJETIVO, VIBRANTE E DENSO).
@@ -609,17 +793,7 @@ ${theologicalNotes ? `
 - SUBSÍDIOS EXEGÉTICOS & SEMENTES HOMILÉTICAS (CONSULTOR TEOLÓGICO 1689):
 ${theologicalNotes}
 (MANDATÓRIO: Incorpore organicamente estes subsídios exegéticos, termos originais grego/hebraico, notas teológicas e sementes homiléticas na introdução, contexto e divisões expositivas do sermão!)` : ''}
-${derivationContext ? `
-- MODO DE DERIVAÇÃO A PARTIR DE MENSAGEM BASE DA BIBLIOTECA:
-  * Origem: "${derivationContext.sourceTitle || title || 'Mensagem Base'}" (${derivationContext.sourceScripture || scripture})
-  * Objetivo da derivação: ${derivationContext.mode === 'bible-study'
-    ? 'ESTUDO BÍBLICO PARTICIPATIVO PARA PEQUENO GRUPO / CÉLULA (PG): transforme a mensagem base em um roteiro claro e caloroso de estudo bíblico em grupo. Mantenha a fidelidade exegética ao texto, mas no campo "application" de cada ponto e em "applications", inclua perguntas reflexivas abertas para diálogo em grupo ("Pergunta para Discussão em Grupo:") e passos práticos de comunhão e oração mútua.'
-    : derivationContext.mode === 'custom'
-    ? `MENSAGEM PERSONALIZADA (${derivationContext.duration || duration || '30'} minutos) para o público/ocasião "${derivationContext.targetAudience || audience}".`
-    : `ADAPTAÇÃO DE DURAÇÃO PARA ${derivationContext.duration || duration || '30'} MINUTOS: preserve o núcleo teológico e exegético da mensagem base, recalibrando extensão, ritmo oral e objetividade exatamente para ${derivationContext.duration || duration || '30'} minutos de exposição.`}${derivationContext.baseSummary ? `
-  * Síntese e estrutura da mensagem base a preservar/adaptar:
-${derivationContext.baseSummary}` : ''}${derivationContext.customNotes ? `
-  * Observação pastoral específica do usuário: ${derivationContext.customNotes}` : ''}` : ''}
+${derivationContext ? buildDerivationPromptDirective(derivationContext, title, scripture, audience, duration) : ''}
 
 ${durationGuideline}
 ${rulesOfDuration}
@@ -631,6 +805,8 @@ ${HOMILETICAL_TRANSITION_GUIDELINE}
 ${THEOLOGICAL_DEPTH_AND_REDEMPTIVE_CHRISTOCENTRISM_GUIDELINE}
 
 ${EXEGESIS_VERSE_REFERENCE_GUIDELINE}
+
+${PURE_PORTUGUESE_PULPIT_GUIDELINE}
 
 ${style === 'isaltino' ? ISALTINO_STYLE_GUIDELINE : style === 'biblico' ? BIBLICO_STYLE_GUIDELINE : style === 'conviccional' ? CONVICCIONAL_STYLE_GUIDELINE : ''}
 
@@ -731,28 +907,36 @@ Certifique-se de que o plano seja extremamente fiel às escrituras, fluido para 
 
   try {
     const sInstruction = (churchProfile === 'neutro' || style === 'biblico')
-      ? "Você é um experiente pregador cristão e orientador homilético focado na exposição bíblica pura, exegese sadia, ortodoxia canônica e neutralidade denominacional. Escreva os sermões sempre formatados em JSON válido, com zelo teológico e profundidade pastoral."
-      : "Você é o Pr. Fernando Veiga, um experiente pregador Batista brasileiro com profundo preparo exegético e amor pelas Escrituras. Escreva os sermões sempre formatados em JSON válido, com zelo teológico e rigor intelectual nos termos batistas clássicos.";
+      ? "Você é um experiente pregador cristão e orientador homilético focado na exposição bíblica pura, exegese sadia, ortodoxia canônica e neutralidade denominacional. Escreva os sermões sempre formatados em JSON válido, com zelo teológico, profundidade pastoral e português do Brasil puro e acessível (sem anglicismos corporativos ou expressões em inglês)."
+      : "Você é o Pr. Fernando Veiga, um experiente pregador Batista brasileiro com profundo preparo exegético e amor pelas Escrituras. Escreva os sermões sempre formatados em JSON válido, com zelo teológico, rigor intelectual nos termos batistas clássicos e português do Brasil puro e acessível (sem anglicismos corporativos ou expressões em inglês).";
+
+    const isLongGeneration =
+      duration === "40" ||
+      duration === "60" ||
+      derivationContext?.mode === "bible-study" ||
+      derivationContext?.mode === "ebd" ||
+      derivationContext?.mode === "catechetical" ||
+      Boolean(theologicalNotes);
 
     const data = await generateJSON({
       contents: prompt,
       systemInstruction: sInstruction,
-      temperature: 0.9
+      temperature: 0.9,
+      timeoutMs: isLongGeneration ? 85000 : 70000,
+      fallbackTimeoutMs: isLongGeneration ? 90000 : 75000,
     });
     return res.json(sanitizeGeneratedSermonPoints(data));
   } catch (error: any) {
     console.warn("Sermon Generation Error (falling back to simulated sermon):", error);
-    const mockSermon = getMockSermon(title, theme, scripture, style, churchProfile, audience, bibleVersion, isOutline, seriesName);
-    const isBibleStudy = derivationContext?.mode === 'bible-study';
-    const errMsg = error?.message || String(error);
+    const mockSermon = applyDerivationFallbackDecorators(
+      sanitizeGeneratedSermonPoints(getMockSermon(title, theme, scripture, style, churchProfile, audience, bibleVersion, isOutline, seriesName)),
+      derivationContext
+    );
     return res.json({
       ...mockSermon,
-      title: isBibleStudy && !String(mockSermon.title || '').toLowerCase().includes('estudo')
-        ? `Estudo Bíblico: ${mockSermon.title}`
-        : mockSermon.title,
       duration: duration || '30',
       fallbackActive: true,
-      fallbackReason: `Falha temporária ao consultar a IA (${errMsg}). O simulador teológico de contingência assumiu a geração da pregação.`
+      fallbackReason: formatFallbackReason("O simulador teológico de contingência assumiu a geração da pregação.", error)
     });
   }
 });
@@ -773,7 +957,9 @@ app.post("/api/gemini/evaluate-sermon", async (req, res) => {
 Faça uma avaliação homilética e teológica rigorosa do seguinte sermão sob a perspectiva ${sermon.churchProfile === 'neutro' ? 'bíblica e hermenêutica neutra' : 'Batista histórica'}.
 Avalie fidelidade bíblica, coerência e estrutura homilética (especialmente a presença de conexões claras e pontes de transição fluidas entre o Título, Tema, Introdução, Contexto Histórico, Divisões, Conclusão etc.), cristocentrismo, clareza pastoral e aplicações reais. Verifique se as transições e pontes cumprem estritamente a "DIRETRIZ HOMILÉTICA OBRIGATÓRIA: TRANSIÇÕES E PONTES ENTRE AS PARTES DO SERMÃO", avaliando com rigor a SINCRONIZAÇÃO TERMINOLÓGICA DAS PONTES: as frases de transição dos pontos expositivos (campo precedingTransition) devem adotar estritamente o mesmo vocábulo conceitual das divisões (se o sermão desenvolve Realidades, a ponte deve usar "realidade"; se desenvolve Verdades, deve usar "verdade"; se desenvolve Pilares, deve usar "pilar"; se desenvolve Marcas, deve usar "marca"). Aponte falha de coerência homilética se houver o uso de termos genéricos fixos como "princípio" quando as divisões não usam essa palavra.
 
-Ao buscar por clichés, detecte expressões gastas, clichês de internet, termos floreados desnecessários, jargões evangélicos comuns ou transições excessivamente mecânicas e robóticas (como "Vejamos três pontos") que enfraquecem o sermão. Proponha alternativas de termos, construções ou frases que fujam desses clichês e se alinhem a um tom literário maduro, sóbrio, caloroso e inteligente${sermon.churchProfile === 'neutro' || sermon.style === 'biblico' ? ' e bíblico focado em ortodoxia e simplicidade' : ', inspirado no pastor Isaltino Gomes Coelho Filho'}.
+Ao buscar por clichés, detecte expressões gastas, clichês de internet, termos floreados desnecessários, jargões evangélicos comuns, anglicismos/estrangeirismos em inglês inadequados ao púlpito (como "sprint", "mindset", "insight", "feedback", "trigger", "reset", "burnout", "status", "check-in", "coaching", "performance" e similares) ou transições excessivamente mecânicas e robóticas (como "Vejamos três pontos") que enfraquecem o sermão. Proponha alternativas em português claro, digno e idiomático que fujam desses clichês e estrangeirismos e se alinhem a um tom literário maduro, sóbrio, caloroso e inteligente${sermon.churchProfile === 'neutro' || sermon.style === 'biblico' ? ' e bíblico focado em ortodoxia e simplicidade' : ', inspirado no pastor Isaltino Gomes Coelho Filho'}.
+
+${PURE_PORTUGUESE_PULPIT_GUIDELINE}
 
 Sermão a ser avaliado:
 Título: ${sermon.title}
@@ -817,21 +1003,23 @@ Retorne um JSON contendo a avaliação no formato:
 
   try {
     const sInstruction = (sermon.churchProfile === 'neutro' || sermon.style === 'biblico')
-      ? "Você é um professor de Homilética e Teologia Sistemática em um conceituado Seminário Bíblico interdenominacional. Avalie sermões de pastores com amor, rigor exegético e franqueza construtiva, focando em sugerir formulações excelentes e pastorais baseadas na exposição pura do texto sagrado e na ortodoxia cristã histórica."
-      : "Você é um professor de Homilética e Teologia Sistemática em um tradicional Seminário Teológico Batista. Avalie sermões de pastores com amor, rigor bíblico e franqueza construtiva. Procure focar em sugerir formulações excelentes e pastorais no estilo maduro e sábio de Isaltino Gomes para clichês vazios detectados.";
+      ? "Você é um professor de Homilética e Teologia Sistemática em um conceituado Seminário Bíblico interdenominacional. Avalie sermões de pastores com amor, rigor exegético e franqueza construtiva, focando em sugerir formulações excelentes e pastorais em português puro e acessível, baseadas na exposição do texto sagrado e na ortodoxia cristã histórica."
+      : "Você é um professor de Homilética e Teologia Sistemática em um tradicional Seminário Teológico Batista. Avalie sermões de pastores com amor, rigor bíblico e franqueza construtiva. Procure focar em sugerir formulações excelentes e pastorais em português puro no estilo maduro e sábio de Isaltino Gomes para clichês vazios e anglicismos detectados.";
 
     const data = await generateJSON({
       contents: prompt,
-      systemInstruction: sInstruction
+      systemInstruction: sInstruction,
+      timeoutMs: 70000,
+      fallbackTimeoutMs: 75000
     });
-    return res.json(data);
+    return res.json(sanitizeEvaluationLanguageServer(data));
   } catch (error: any) {
     console.warn("Evaluation Error (falling back to simulated evaluation):", error);
     const mockEval = getMockEvaluation();
     return res.json({
       ...mockEval,
       fallbackActive: true,
-      fallbackReason: "Limite de cota da API atingido (Código 429). O parecer avaliativo do corpo docente foi gerado de forma simulativa offline."
+      fallbackReason: formatFallbackReason("O parecer avaliativo do corpo docente foi gerado de forma simulativa offline.", error)
     });
   }
 });
@@ -858,6 +1046,8 @@ Número de Mensagens na Série: ${sermonCount || 4}
 
 A série deve dividir o livro em perícopes sequenciais e lógicas. Cada sermão deve focar em uma exposição bíblica rica e cristocêntrica, com sólida hermenêutica e aplicações práticas de excelência.
 
+${PURE_PORTUGUESE_PULPIT_GUIDELINE}
+
 Retorne no formato JSON exato:
 {
   "title": "Nome da Série de Sermões (ex: Fortalecidos na Graça)",
@@ -880,11 +1070,14 @@ Retorne no formato JSON exato:
   try {
     const data = await generateJSON({
       contents: prompt,
-      systemInstruction: "Você é o Pr. Fernando Veiga. Seu foco é pregação bíblica expositiva de alta qualidade, estruturando séries integradas com divisões exegéticas inteligentes e títulos pregáveis."
+      systemInstruction: "Você é o Pr. Fernando Veiga. Seu foco é pregação bíblica expositiva de alta qualidade, estruturando séries integradas com divisões exegéticas inteligentes, títulos pregáveis e português puro e acessível.",
+      timeoutMs: 70000,
+      fallbackTimeoutMs: 75000
     });
+    const sanitizedSeries = sanitizeSeriesLanguageServer(data);
     return res.json({
-      ...data,
-      id: data?.id || `series_${Date.now()}`
+      ...sanitizedSeries,
+      id: sanitizedSeries?.id || `series_${Date.now()}`
     });
   } catch (error: any) {
     console.warn("Series Generation Error (falling back to simulated series):", error);
@@ -893,7 +1086,7 @@ Retorne no formato JSON exato:
       ...mockSeries,
       id: `series_${Date.now()}`,
       fallbackActive: true,
-      fallbackReason: "Limite de cota da API atingido (Código 429). A série de sermões expositivos foi estruturada de forma simulativa offline."
+      fallbackReason: formatFallbackReason("A série de sermões expositivos foi estruturada de forma simulativa offline.", error)
     });
   }
 });
@@ -943,6 +1136,8 @@ REQUISITOS MANDATÓRIOS DA RESPOSTA:
    - "homileticalSeeds": Array de 3 a 5 sementes homiléticas (proposições, divisões ou esboços) para o pastor utilizar em sermões.
 5. Siga o tom pastoral culto, equilibrado, sóbrio e sem clichês artificiais (sobriedade homilética de Isaltino Gomes).
 
+${PURE_PORTUGUESE_PULPIT_GUIDELINE}
+
 Retorne estritamente o JSON estruturado conforme o esquema.
 `;
 
@@ -977,16 +1172,18 @@ Retorne estritamente o JSON estruturado conforme o esquema.
     const data = await generateJSON({
       contents: prompt,
       systemInstruction: SENIOR_THEOLOGICAL_CONSULTANT_SYSTEM_PROMPT,
-      responseSchema: chatResponseSchema
+      responseSchema: chatResponseSchema,
+      timeoutMs: 75000,
+      fallbackTimeoutMs: 80000
     });
-    return res.json(data);
+    return res.json(sanitizeChatLanguageServer(data));
   } catch (error: any) {
     console.warn("Bible Chat Error (falling back to simulated exegesis):", error);
     const mockChat = getMockChatResponse(baseScripture, userQuery);
     return res.json({
       ...mockChat,
       fallbackActive: true,
-      fallbackReason: "Limite de cota da API atingido (Código 429). O Assistente Exegético simulou o estudo teológico de contingência com êxito."
+      fallbackReason: formatFallbackReason("O Assistente Exegético simulou o estudo teológico de contingência com êxito.", error)
     });
   }
 });
@@ -1028,7 +1225,9 @@ Evite inventar versículos. Retorne em JSON exato:
 
   try {
     const data = await generateJSON({
-      contents: prompt
+      contents: prompt,
+      timeoutMs: 65000,
+      fallbackTimeoutMs: 70000
     });
     return res.json(data);
   } catch (error: any) {
@@ -1037,7 +1236,7 @@ Evite inventar versículos. Retorne em JSON exato:
     return res.json({
       ...mockComp,
       fallbackActive: true,
-      fallbackReason: "Limite de cota da API atingido (Código 429). O comparador retornou as versões bíblicas em regime de contingência simulada."
+      fallbackReason: formatFallbackReason("O comparador retornou as versões bíblicas em regime de contingência simulada.", error)
     });
   }
 });
@@ -1090,6 +1289,8 @@ Nunca gerar:
 - hermeneuticalRisk: Risco hermenêutico ou perigo exegético mais recorrente que o pregador corre ao pregar sobre este tema específico (como incorrer em moralismo, legalismo, espiritualização barata, ativismo secular, etc.);
 - observation: Explique detalhadamente por que o texto permite esse tema, abrangendo explicitamente o que o texto permite, por que permite, e também informando expressamente "O que o texto NÃO está ensinando" (evitando distorções teológicas).
 
+${PURE_PORTUGUESE_PULPIT_GUIDELINE}
+
 --- RETORNO DO JSON ---
 Você deve retornar estritamente os dados formatados conforme o esquema de resposta JSON exigido. Não inclua introduções informais, explicações textuais fora do JSON ou tags markdown de código.
 `;
@@ -1132,16 +1333,18 @@ Você deve retornar estritamente os dados formatados conforme o esquema de respo
   try {
     const data = await generateJSON({
       contents: prompt,
-      responseSchema: pericopeSchema
+      responseSchema: pericopeSchema,
+      timeoutMs: 70000,
+      fallbackTimeoutMs: 75000
     });
-    return res.json(data);
+    return res.json(sanitizePericopeLanguageServer(data));
   } catch (error: any) {
     console.warn("Pericope Explorer Error (falling back to simulated analysis):", error);
     const mockPericope = getMockPericopeAnalysis(scripture);
     return res.json({
       ...mockPericope,
       fallbackActive: true,
-      fallbackReason: "Limite de cota da API atingido (Código 429). O Explorador retornou a análise bíblica em regime de contingência simulada."
+      fallbackReason: formatFallbackReason("O Explorador retornou a análise bíblica em regime de contingência simulada.", error)
     });
   }
 });
@@ -1200,10 +1403,12 @@ A SAÍDA TEOLÓGICA MAGISTRAL (SERMÃO DE FECHAMENTO / PERORAÇÃO & APELO APOLO
 - A Peroração DEVE ser um Sermão de Fechamento / Peroração Completa e Encorpada para o Púlpito (3 parágrafos densos e vigorosos, separados por '\n\n', totalizando entre 280 e 450 palavras).
 - DIRETRIZES DE ESTILO HOMILÉTICO E LINGUAGEM (OBRIGATÓRIO):
   1. Linguagem Moderna, Incisiva e Altamente Dialógica: Conecte-se diretamente com o homem e a mulher de hoje. NUNCA utilize arcaísmos, segunda pessoa do plural bíblica ("vós", "olhai", "tendes", "arrependei-vos", "firmai", "repudiai") ou tom eclesiástico empolado. Empregue a linguagem oral, calorosa, inteligente e límpida de um pastor contemporâneo experiente falando à sua congregação ("você", "nós", "meus irmãos", "amigo ouvinte", "olhemos").
-  2. Confronto com os Dilemas da Nossa Época: Confronte com sensibilidade e coragem o vazio existencial moderno, a ansiedade crônica, a obsessão por performance, a solidão das telas digitais e o secularismo silencioso que reduz a vida a consumo. Desmascare o "moralismo terapêutico" (tratar Deus como mero assistente de bem-estar ou autoajuda).
+  2. Confronto com os Dilemas da Nossa Época: Confronte com sensibilidade e coragem o vazio existencial moderno, a ansiedade crônica, a obsessão por desempenho, a solidão das telas digitais e o secularismo silencioso que reduz a vida a consumo. Desmascare o "moralismo terapêutico" (tratar Deus como mero assistente de bem-estar ou autoajuda).
   3. Síntese das Três Camadas do Crivo (Parágrafo 1): Conecte como as heresias históricas (pelagianismo/salvação por mérito ou racionalismo frio da Camada 1) voltam hoje disfarçadas na busca por validação e na fôrma do secularismo (Camada 2), e como a igreja é tentada à covardia espiritual e complacência sincretista (Camada 3). O texto bíblico em foco desfaz essas ilusões.
   4. Centralidade Cristocêntrica e a Fé Confessional de 1689 (Parágrafo 2): Ancore a resposta na suficiência absoluta de Jesus Cristo como nosso único e divino Mediador (Segunda Confissão Batista de Londres de 1689, Cap. 8 e Cap. 16) e na autoridade inerrante das Escrituras. Mostre que a justificação pela fé e a graça redentora libertam o ser humano da tirania do medo e da aprovação social.
   5. Apelo Pastoral e Evangelístico Direto ao Coração (Parágrafo 3): Convoque os ouvintes com afeto pastoral, firmeza e sobriedade (ao estilo de Isaltino Gomes Coelho Filho). Faça um chamado claro: desafie o crente acomodado a abandonar a religiosidade de conveniência e deitar a vida no altar; e convide a pessoa sem Cristo a reconhecer sua necessidade, abandonar a autossuficiência e repousar na graça salvadora do Redentor.
+
+${PURE_PORTUGUESE_PULPIT_GUIDELINE}
 
 Retorne rigorosamente em formato JSON válido:
 {
@@ -1243,11 +1448,14 @@ Retorne rigorosamente em formato JSON válido:
   try {
     const data = await generateJSON({
       contents: prompt,
-      systemInstruction: "Você é o Consultor Teológico e Hermenêutico Sênior do Estúdio Homilético Batista. Avalie a mensagem com fidelidade bíblica intransigente, 1689 e sobriedade pastoral."
+      systemInstruction: "Você é o Consultor Teológico e Hermenêutico Sênior do Estúdio Homilético Batista. Avalie a mensagem com fidelidade bíblica intransigente, 1689, sobriedade pastoral e português puro e acessível.",
+      timeoutMs: 75000,
+      fallbackTimeoutMs: 80000
     });
+    const sanitizedSieve = sanitizeSieveLanguageServer(data);
     return res.json({
       id: `sieve-${Date.now()}`,
-      ...data,
+      ...sanitizedSieve,
       createdAt: Date.now()
     });
   } catch (error: any) {
@@ -1256,7 +1464,7 @@ Retorne rigorosamente em formato JSON válido:
     return res.json({
       ...mockResult,
       fallbackActive: true,
-      fallbackReason: "Limite de cota da API atingido. O Crivo Teológico gerou o relatório em regime de contingência simulada."
+      fallbackReason: formatFallbackReason("O Crivo Teológico gerou o relatório em regime de contingência simulada.", error)
     });
   }
 });
@@ -1702,7 +1910,9 @@ Divida a transcrição e popule o JSON requerido:
   6. "Apelo"
   7. "Momentos de Interação"
 
-Escreva textos substanciais e ricos que pareçam reais e autênticos. Retorne estritamente o JSON válido.
+Escreva textos substanciais e ricos que pareçam reais e autênticos.
+${PURE_PORTUGUESE_PULPIT_GUIDELINE}
+Retorne estritamente o JSON válido.
 `;
         activeSchema = transcriptSchema;
       } else if (stage === 3) {
@@ -1721,6 +1931,8 @@ Gere o JSON mapeado conforme o esquema mapSchema:
 - purpose: O propósito pastoral definido (o que a pregação visava produzir nos ouvintes).
 - structure: Uma lista detalhada dos blocos da estrutura contendo a seção (Introdução, Contexto, Proposição, Divisões principais, subdivisões, aplicações, conclusão, apelo), título do bloco e descrição do conteúdo desse bloco.
 - resources: Lista com recursos homiléticos utilizados (ilustrações, exemplos, citações, contrastes, testemunhos, etc.) e sua descrição detalhada.
+
+${PURE_PORTUGUESE_PULPIT_GUIDELINE}
 
 Retorne estritamente o JSON estruturado.
 `;
@@ -1744,6 +1956,8 @@ Avalie e gere o relatório detalhado no JSON conforme o esquema analysisSchema:
 - improvements: Lista com 1 a 3 pontos que poderiam ser fortalecidos.
 - suggestions: Lista com conselhos e melhorias diretas, práticas e viáveis de oratória ou homilética sem alterar o estilo pessoal do pregador.
 
+${PURE_PORTUGUESE_PULPIT_GUIDELINE}
+
 Retorne estritamente o JSON correspondente.
 `;
         activeSchema = analysisSchema;
@@ -1761,6 +1975,8 @@ Instruções de Edição:
 - Melhore a concordância de gênero, número e grau, ajuste a pontuação para manter a leitura fluida, organize em parágrafos coerentes.
 - Preserve de forma primorosa a oralidade sábia, acolhedora e sóbria típica de Isaltino Gomes Coelho Filho (evite empolamento literário artificial, mantenha a profundidade batista natural e o tom de diálogo caloroso com a congregação).
 - O manuscrito final deve soar como se tivesse sido inteiramente escrito pelo próprio pregador em seu gabinete de estudos pastorais.
+
+${PURE_PORTUGUESE_PULPIT_GUIDELINE}
 
 Gere o JSON correspondente:
 {
@@ -1790,17 +2006,22 @@ Gere as adaptações ricas e completas no JSON correspondente ao esquema publish
   - legenda: Texto completo para a legenda do post (com tom de conversa amigável e focado).
   - hashtags: Lista de hashtags pertinentes.
 
+${PURE_PORTUGUESE_PULPIT_GUIDELINE}
+
 Retorne estritamente o JSON estruturado do publishSchema.
 `;
         activeSchema = publishSchema;
       }
 
+      const isHeavyStage = stage === 2 || stage === 5 || stage === 6;
       const generated = await generateJSON({
         contents: prompt,
-        responseSchema: activeSchema
+        responseSchema: activeSchema,
+        timeoutMs: isHeavyStage ? 75000 : 70000,
+        fallbackTimeoutMs: isHeavyStage ? 80000 : 75000
       });
 
-      return res.json(generated);
+      return res.json(sanitizePipelineStageLanguageServer(stage, generated));
 
     } catch (err: any) {
       console.warn(`[AI Processing Error at Stage ${stage}] Falling back to dynamic simulation. Error:`, err);
@@ -1808,7 +2029,7 @@ Retorne estritamente o JSON estruturado do publishSchema.
       return res.json({
         ...simulation,
         fallbackActive: true,
-        fallbackReason: `Limite ou erro temporário na IA (Código: ${err.message || "429"}). Ativamos o modo de contingência dinâmica para garantir o processamento do sermão.`
+        fallbackReason: formatFallbackReason("Ativamos o modo de contingência dinâmica para garantir o processamento do sermão.", err)
       });
     }
   } else {
@@ -1863,6 +2084,8 @@ DIRETRIZES FUNDAMENTAIS PARA AS NARRATIVAS HOMILÉTICAS:
    - Escreva a narrativa (campo "story") em tom falado natural, fluido e direto, sem vocabulário rebuscado ou academicismos frios. O pregador deve poder ler ou contar a história com ritmo, pausas expressivas e impacto imediato na congregação (2 a 4 parágrafos vigorosos).
    - O campo "moral" ("Moral & Lição Homilética") deve ser a ponte teológica clara e incisiva que amarra a história à verdade bíblica e desce às trincheiras do coração do ouvinte.
 
+${PURE_PORTUGUESE_PULPIT_GUIDELINE}
+
 Retorne no formato JSON exato:
 {
   "topic": "${topic || "Graça e Redenção"}",
@@ -1884,16 +2107,18 @@ Gere entre 2 e 3 ilustrações completas, profundas e ricas.
 
   try {
     const data = await generateJSON({
-      contents: prompt
+      contents: prompt,
+      timeoutMs: 70000,
+      fallbackTimeoutMs: 75000
     });
-    return res.json(data);
+    return res.json(sanitizeIllustrationsLanguageServer(data));
   } catch (error: any) {
     console.warn("Illustrations Error (falling back to simulated illustrations):", error);
     const mockIllus = getMockIllustrations(topic, type, scripture, visualStyle, aspectRatio, colorTone);
     return res.json({
       ...mockIllus,
       fallbackActive: true,
-      fallbackReason: "Limite de cota da API atingido. O gerador recorreu ao acervo ilustrativo pastoral local."
+      fallbackReason: formatFallbackReason("O gerador recorreu ao acervo ilustrativo pastoral local.", error)
     });
   }
 });
@@ -1941,6 +2166,8 @@ ${THEOLOGICAL_DEPTH_AND_REDEMPTIVE_CHRISTOCENTRISM_GUIDELINE}
 
 ${EXEGESIS_VERSE_REFERENCE_GUIDELINE}
 
+${PURE_PORTUGUESE_PULPIT_GUIDELINE}
+
 ${sermon.style === 'isaltino' ? ISALTINO_STYLE_GUIDELINE : sermon.style === 'biblico' ? BIBLICO_STYLE_GUIDELINE : sermon.style === 'conviccional' ? CONVICCIONAL_STYLE_GUIDELINE : ''}
 
 Abaixo está o conteúdo completo do sermão original para você analisar e melhorar:
@@ -1979,21 +2206,23 @@ Retorne obrigatoriamente um objeto JSON com os mesmos campos do sermão, contend
 
   try {
     const sInstruction = (sermon.churchProfile === 'neutro' || sermon.style === 'biblico')
-      ? "Você é um experiente consultor e revisor homilético cristão focado na exegese pura das Escrituras e neutralidade denominacional. Você atua como um assistente homilético inteligente no refinamento cirúrgico de sermões."
-      : "Você é o Pr. Fernando Veiga, um experiente pregador Batista brasileiro. Você atua como um assistente homilético inteligente no refinamento cirúrgico de sermões.";
+      ? "Você é um experiente consultor e revisor homilético cristão focado na exegese pura das Escrituras e neutralidade denominacional. Você atua como um assistente homilético inteligente no refinamento cirúrgico de sermões, escrevendo exclusivamente em português puro e acessível (sem anglicismos corporativos ou expressões em inglês)."
+      : "Você é o Pr. Fernando Veiga, um experiente pregador Batista brasileiro. Você atua como um assistente homilético inteligente no refinamento cirúrgico de sermões, escrevendo exclusivamente em português puro e acessível (sem anglicismos corporativos ou expressões em inglês).";
 
     const data = await generateJSON({
       contents: prompt,
-      systemInstruction: sInstruction
+      systemInstruction: sInstruction,
+      timeoutMs: 70000,
+      fallbackTimeoutMs: 75000
     });
     return res.json(sanitizeGeneratedSermonPoints(data));
   } catch (error: any) {
     console.warn("Improvement Sermon Error (falling back to simulated revision):", error);
-    const mockRev = getMockImprovedSermon(sermon, improvement);
+    const mockRev = sanitizeGeneratedSermonPoints(getMockImprovedSermon(sermon, improvement));
     return res.json({
       ...mockRev,
       fallbackActive: true,
-      fallbackReason: "Limite de cota da API atingido (Código 429). O editor local de contingência aplicou a revisão pastoral cirúrgica offline."
+      fallbackReason: formatFallbackReason("O editor local de contingência aplicou a revisão pastoral cirúrgica offline.", error)
     });
   }
 });
@@ -2214,13 +2443,17 @@ DIRETRIZES DE ESTILO E SOBRIEDADE PASTORAL:
 1. Linguagem limpa, sóbria, direta, calorosa e humana — evitando vocabulário "barroco" artificial, rebuscamento pomposo ou clichês gastos ("glorioso", "bendito", "celestial", "profunda reverência", "impenetrável").
 2. Cada tema precisa ser útil para preparo real de púlpito: título claro e memorável, texto bíblico exato (com capítulo e versículos), tese/resumo conciso (2 a 3 frases objetivas), aplicação pastoral concreta para o cotidiano (1 a 2 frases) e 3 indicações curtas de divisões para esboço (outlineHints).
 ${categoryGuideline}
-4. Para o campo "approach", utilize OBRIGATORIAMENTE um destes valores exatos: "Expositivo", "Temático", "Pastoral" ou "Devocional".`;
+4. Para o campo "approach", utilize OBRIGATORIAMENTE um destes valores exatos: "Expositivo", "Temático", "Pastoral" ou "Devocional".
+
+${PURE_PORTUGUESE_PULPIT_GUIDELINE}`;
 
   try {
     const data = await generateJSON({
       contents: prompt,
       systemInstruction:
-        "Você é um pastor e professor de homilética bíblica sóbrio, experiente e fiel às Escrituras. Produza temas de sermão claros, teologicamente consistentes, humanos e aplicáveis à igreja local.",
+        "Você é um pastor e professor de homilética bíblica sóbrio, experiente e fiel às Escrituras. Produza temas de sermão claros, teologicamente consistentes, humanos, aplicáveis à igreja local e redigidos em português puro e acessível (sem anglicismos).",
+      timeoutMs: 70000,
+      fallbackTimeoutMs: 75000,
       responseSchema: {
         type: Type.OBJECT,
         properties: {
@@ -2264,7 +2497,7 @@ ${categoryGuideline}
     const now = Date.now();
     const formattedThemes = rawList.slice(0, 4).map((item: any, idx: number) => ({
       id: `theme_${now}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
-      title: String(item?.title || "Tema Homilético").trim().slice(0, 200),
+      title: sanitizePulpitPortugueseServer(String(item?.title || "Tema Homilético").trim()).slice(0, 200),
       scripture: String(
         item?.scripture || (validMode === "scripture" ? trimmedInput : "Salmos 119:105")
       )
@@ -2275,20 +2508,16 @@ ${categoryGuideline}
         validMode === "category"
           ? normalizedCategory
           : normalizeThemeCategory(item?.category, false, normalizedCategory),
-      summary: String(
-        item?.summary || "Exposição fiel da passagem bíblica para edificação da igreja."
-      )
-        .trim()
-        .slice(0, 800),
-      application: String(
-        item?.application || "Aplicação prática à vida diária da comunidade."
-      )
-        .trim()
-        .slice(0, 800),
+      summary: sanitizePulpitPortugueseServer(
+        String(item?.summary || "Exposição fiel da passagem bíblica para edificação da igreja.").trim()
+      ).slice(0, 800),
+      application: sanitizePulpitPortugueseServer(
+        String(item?.application || "Aplicação prática à vida diária da comunidade.").trim()
+      ).slice(0, 800),
       outlineHints: Array.isArray(item?.outlineHints)
         ? item.outlineHints
             .filter((h: unknown): h is string => typeof h === "string" && h.trim().length > 0)
-            .map((h: string) => h.trim().slice(0, 240))
+            .map((h: string) => sanitizePulpitPortugueseServer(h.trim()).slice(0, 240))
             .slice(0, 5)
         : [],
       isGenerated: true,
@@ -2312,8 +2541,7 @@ ${categoryGuideline}
     return res.json({
       themes: mockThemes,
       fallbackActive: true,
-      fallbackReason:
-        "Limite de cota ou instabilidade momentânea da API Gemini. Sugestões de contingência geradas localmente.",
+      fallbackReason: formatFallbackReason("Sugestões de contingência geradas localmente.", error),
     });
   }
 });
@@ -2368,7 +2596,9 @@ Retorne em formato JSON válido:
   try {
     const data = await generateJSON({
       contents: prompt,
-      systemInstruction: "Você é um especialista em pedagogia infantil e juvenil brasileira, criando atividades ricas sob medida no padrão sugerido em JSON."
+      systemInstruction: "Você é um especialista em pedagogia infantil e juvenil brasileira, criando atividades ricas sob medida no padrão sugerido em JSON.",
+      timeoutMs: 70000,
+      fallbackTimeoutMs: 75000
     });
     return res.json(data);
   } catch (error: any) {
@@ -2385,7 +2615,7 @@ Retorne em formato JSON válido:
       ],
       duration: duration || "50 minutos",
       fallbackActive: true,
-      fallbackReason: "Limite de cota da API atingido ou erro. O simulador de atividades pedagógicas assumiu as respostas."
+      fallbackReason: formatFallbackReason("O simulador de atividades pedagógicas assumiu as respostas.", error)
     });
   }
 });
@@ -2422,7 +2652,9 @@ Retorne um JSON contendo a seguinte estrutura de síntese e análise para planej
   try {
     const data = await generateJSON({
       contents: prompt,
-      systemInstruction: "Você é um assistente pedagógico especializado em processamento e estruturação de materiais didáticos a partir de arquivos e textos importados."
+      systemInstruction: "Você é um assistente pedagógico especializado em processamento e estruturação de materiais didáticos a partir de arquivos e textos importados.",
+      timeoutMs: 70000,
+      fallbackTimeoutMs: 75000
     });
     return res.json(data);
   } catch (error: any) {
@@ -2433,7 +2665,7 @@ Retorne um JSON contendo a seguinte estrutura de síntese e análise para planej
       keyTopics: ["Identificação das premissas", "Diferenças analíticas", "Aplicação prática contextualizada"],
       recommendedGrade: "Ano sugerido de acordo com densidade textual",
       fallbackActive: true,
-      fallbackReason: "Limite de cota atingido ou falha de rede interna. O plano de contingência gerou a interpretação off-line."
+      fallbackReason: formatFallbackReason("O plano de contingência gerou a interpretação off-line.", error)
     });
   }
 });
@@ -2515,9 +2747,333 @@ function getSynchronizedTransitions(context: string, p1Title: string, p2Title: s
   ];
 }
 
+function matchWordCaseServer(sample: string, replacement: string): string {
+  if (!sample) return replacement;
+  if (sample === sample.toUpperCase() && sample !== sample.toLowerCase()) {
+    return replacement.toUpperCase();
+  }
+  const firstChar = sample.charAt(0);
+  if (firstChar === firstChar.toUpperCase() && firstChar !== firstChar.toLowerCase()) {
+    return replacement.charAt(0).toUpperCase() + replacement.slice(1);
+  }
+  return replacement;
+}
+
+const ANGLICISM_RULES_SERVER: Array<{ pattern: RegExp; replace: (match: string, ...groups: string[]) => string }> = [
+  {
+    pattern: /\b(esgotamento(?:\s+(?:f[íi]sico(?:\s+e\s+mental)?|mental|emocional|profissional))?)\s*\(\s*burnout\s*\)/gi,
+    replace: (_m, base) => base,
+  },
+  {
+    pattern: /\b([a-záéíóúâêôãõç]+(?:\s+[a-záéíóúâêôãõç]+){0,2})\s*\(\s*(?:sprint|mindset|insights?|feedbacks?|triggers?|reset|burnout|check-?in|coaching|stress|deadlines?|follow-?up|timing|background|briefing|workshops?|networking|marketing|feeling|target|gap|upgrade|lifestyle|mood|vibe)\s*\)/gi,
+    replace: (_m, base) => base,
+  },
+  {
+    pattern: /\bstatus\s+quo\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'estado atual das coisas'),
+  },
+  {
+    pattern: /\b(a|à|da|na|pela|uma|sua|essa|esta|alta|boa|má|nova|grande|verdadeira)\s+(status)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCaseServer(word, 'posição')}`,
+  },
+  {
+    pattern: /\bstatus\s+social\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'prestígio social'),
+  },
+  {
+    pattern: /\bstatus\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'prestígio'),
+  },
+  {
+    pattern: /\b(a|à|da|na|pela|uma|sua|essa|esta|alta|boa|má|melhor|pior|nova|velha|grande|verdadeira)\s+(performance)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCaseServer(word, 'atuação')}`,
+  },
+  {
+    pattern: /\bperformances\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'desempenhos'),
+  },
+  {
+    pattern: /\bperformance\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'desempenho'),
+  },
+  {
+    pattern: /\bburnout\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'esgotamento'),
+  },
+  {
+    pattern: /\b(a|à|da|na|pela|uma|sua|essa|esta|nova|velha|grande|verdadeira)\s+(mindset)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCaseServer(word, 'mentalidade')}`,
+  },
+  {
+    pattern: /\bmindset\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'modo de pensar'),
+  },
+  {
+    pattern: /\binsights\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'discernimentos'),
+  },
+  {
+    pattern: /\b(a|à|da|na|pela|uma|sua|essa|esta|nova|boa|grande|verdadeira)\s+(insight)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCaseServer(word, 'percepção')}`,
+  },
+  {
+    pattern: /\binsight\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'discernimento'),
+  },
+  {
+    pattern: /\bfeedbacks\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'retornos'),
+  },
+  {
+    pattern: /\bfeedback\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'retorno'),
+  },
+  {
+    pattern: /\b(o|os|ao|aos|do|dos|no|nos|um|uns)\s+(sprints?)\b/gi,
+    replace: (_m, article, word) =>
+      `${article} ${matchWordCaseServer(word, word.toLowerCase().endsWith('s') ? 'esforços intensos' : 'esforço intenso')}`,
+  },
+  {
+    pattern: /\bsprints\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'arrancadas'),
+  },
+  {
+    pattern: /\bsprint\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'esforço intenso'),
+  },
+  {
+    pattern: /\btriggers\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'gatilhos'),
+  },
+  {
+    pattern: /\btrigger\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'gatilho'),
+  },
+  {
+    pattern: /\bresetar\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'recomeçar'),
+  },
+  {
+    pattern: /\bresetado\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'reiniciado'),
+  },
+  {
+    pattern: /\breset\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'recomeço'),
+  },
+  {
+    pattern: /\bcheck-?ins\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'acompanhamentos'),
+  },
+  {
+    pattern: /\bcheck-?in\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'acompanhamento'),
+  },
+  {
+    pattern: /\bcoaching\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'direcionamento motivacional'),
+  },
+  {
+    pattern: /\bcoaches\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'instrutores'),
+  },
+  {
+    pattern: /\bcoach\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'instrutor'),
+  },
+  {
+    pattern: /\bstress\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'estresse'),
+  },
+  {
+    pattern: /\bdeadlines\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'prazos'),
+  },
+  {
+    pattern: /\bdeadline\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'prazo'),
+  },
+  {
+    pattern: /\bfollow-?ups\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'acompanhamentos'),
+  },
+  {
+    pattern: /\bfollow-?up\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'acompanhamento'),
+  },
+  {
+    pattern: /\btiming\s+(certo|exato|perfeito|ideal)\b/gi,
+    replace: (_m, adj) => `momento ${adj.toLowerCase()}`,
+  },
+  {
+    pattern: /\btiming\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'momento oportuno'),
+  },
+  {
+    pattern: /\bbackground\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'histórico'),
+  },
+  {
+    pattern: /\bbriefing\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'resumo'),
+  },
+  {
+    pattern: /\b(o|os|ao|aos|do|dos|no|nos|um|uns)\s+(workshops?)\b/gi,
+    replace: (_m, article, word) =>
+      `${article} ${matchWordCaseServer(word, word.toLowerCase().endsWith('s') ? 'seminários' : 'seminário')}`,
+  },
+  {
+    pattern: /\bworkshops\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'oficinas'),
+  },
+  {
+    pattern: /\bworkshop\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'oficina'),
+  },
+  {
+    pattern: /\b(o|do|no|um|seu)\s+(networking)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCaseServer(word, 'círculo de contatos')}`,
+  },
+  {
+    pattern: /\bnetworking\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'rede de contatos'),
+  },
+  {
+    pattern: /\bmarketing\s+pessoal\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'autopromoção'),
+  },
+  {
+    pattern: /\b(o|do|no|um|seu)\s+(marketing)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCaseServer(word, 'apelo promocional')}`,
+  },
+  {
+    pattern: /\bmarketing\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'divulgação'),
+  },
+  {
+    pattern: /\b(o|do|no|um|seu)\s+(feeling)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCaseServer(word, 'senso')}`,
+  },
+  {
+    pattern: /\bfeeling\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'sensibilidade'),
+  },
+  {
+    pattern: /\btarget\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'alvo'),
+  },
+  {
+    pattern: /\b(o|os|do|dos|no|nos|um|uns)\s+(gaps?)\b/gi,
+    replace: (_m, article, word) =>
+      `${article} ${matchWordCaseServer(word, word.toLowerCase().endsWith('s') ? 'vãos' : 'vão')}`,
+  },
+  {
+    pattern: /\bgaps\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'lacunas'),
+  },
+  {
+    pattern: /\bgap\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'lacuna'),
+  },
+  {
+    pattern: /\bupgrades\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'avanços'),
+  },
+  {
+    pattern: /\bupgrade\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'avanço'),
+  },
+  {
+    pattern: /\blifestyle\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'estilo de vida'),
+  },
+  {
+    pattern: /\bmood\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'ânimo'),
+  },
+  {
+    pattern: /\b(o|do|no|um|esse|este)\s+(vibe)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCaseServer(word, 'clima')}`,
+  },
+  {
+    pattern: /\bvibe\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'atmosfera'),
+  },
+  {
+    pattern: /\b(o|do|no|um|esse|este)\s+(hype)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCaseServer(word, 'alvoroço')}`,
+  },
+  {
+    pattern: /\bhype\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'euforia passageira'),
+  },
+  {
+    pattern: /\boverthinking\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'excesso de preocupações'),
+  },
+  {
+    pattern: /\bmultitasking\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'acúmulo de tarefas'),
+  },
+  {
+    pattern: /\bcomfort\s+zone\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'zona de conforto'),
+  },
+  {
+    pattern: /\bfake\s+news\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'notícias falsas'),
+  },
+  {
+    pattern: /\bbullying\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'intimidação'),
+  },
+  {
+    pattern: /\bhome\s+office\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'trabalho em casa'),
+  },
+  {
+    pattern: /\blockdown\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'confinamento'),
+  },
+  {
+    pattern: /\bsoft\s+skills\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'habilidades interpessoais'),
+  },
+  {
+    pattern: /\bhard\s+skills\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'habilidades técnicas'),
+  },
+  {
+    pattern: /\bbrainstorming?\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'troca de ideias'),
+  },
+  {
+    pattern: /\b(a|à|da|na|uma|sua)\s+(selfies?)\b/gi,
+    replace: (_m, article, word) =>
+      `${article} ${matchWordCaseServer(word, word.toLowerCase().endsWith('s') ? 'fotos próprias' : 'foto própria')}`,
+  },
+  {
+    pattern: /\bselfies\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'autorretratos'),
+  },
+  {
+    pattern: /\bselfie\b/gi,
+    replace: (m) => matchWordCaseServer(m, 'autorretrato'),
+  },
+];
+
+function sanitizePulpitPortugueseServer(text: string): string {
+  if (!text) return '';
+  let result = String(text);
+  for (const rule of ANGLICISM_RULES_SERVER) {
+    result = result.replace(rule.pattern, rule.replace);
+  }
+  return result;
+}
+
 function stripSubsectionMarkersServer(text: string): string {
   if (!text) return '';
-  return String(text)
+  const cleaned = String(text)
     .replace(
       /(?:^|\n)\s*(?:[•\-*]\s*)?(?:\([a-dA-D]\)|[a-dA-D][.)])\s*(?:Explica[çc][ãa]o\s+Textual(?:\s+Profunda)?(?:\s*(?:e|&)\s*Termos\s+Originais)?|Exposi[çc][ãa]o\s+do\s+Texto|Paralelos\s+Escritur[íi]sticos(?:\s+Can[ôo]nicos)?|Cristocentrismo\s+Redentor|Aconselhamento(?:\s*,?\s*(?:e|&)?\s*Confronto)?\s+Pastoral(?:\s*(?:e|&)\s*Aplica[çc][ãa]o(?:\s+P[óo]s-Moderna)?)?|Aplica[çc][ãa]o\s+Pastoral(?:\s+Direta)?|Aplica[çc][ãa]o\s+Pr[áa]tica|Aplica[çc][ãa]o)\s*[:\-–—]?\s*/gi,
       '\n\n'
@@ -2538,6 +3094,8 @@ function stripSubsectionMarkersServer(text: string): string {
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+
+  return sanitizePulpitPortugueseServer(cleaned);
 }
 
 function splitEmbeddedApplicationServer(rawExplanation: string): {
@@ -2572,78 +3130,337 @@ function looksLikePastoralApplicationServer(paragraph: string): boolean {
 }
 
 function sanitizeGeneratedSermonPoints(data: any): any {
-  if (!data || !Array.isArray(data.expositoryPoints)) return data;
+  if (!data || typeof data !== 'object') return data;
   const romans = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
-  const expositoryPoints = data.expositoryPoints.map((pt: any, idx: number) => {
-    const rawTitle = String(pt?.title || `Tópico ${idx + 1}`).trim();
-    const bareTitle = rawTitle.replace(/^(?:[IVXLCDM]+|\d+)\s*[.)\-–—:]\s*/i, '').trim() || `Tópico ${idx + 1}`;
-    const romanTitle = `${romans[idx] || String(idx + 1)}. ${bareTitle}`;
+  const expositoryPoints = Array.isArray(data.expositoryPoints)
+    ? data.expositoryPoints.map((pt: any, idx: number) => {
+        const rawTitle = sanitizePulpitPortugueseServer(String(pt?.title || `Tópico ${idx + 1}`).trim());
+        const bareTitle = rawTitle.replace(/^(?:[IVXLCDM]+|\d+)\s*[.)\-–—:]\s*/i, '').trim() || `Tópico ${idx + 1}`;
+        const romanTitle = `${romans[idx] || String(idx + 1)}. ${bareTitle}`;
 
-    const { explanationBody, extractedApplication } = splitEmbeddedApplicationServer(String(pt?.explanation || ''));
-    let expl = stripSubsectionMarkersServer(explanationBody);
-    const escapedBare = bareTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const titlePrefixRegex = new RegExp(`^(?:(?:[IVXLCDM]+|\\d+)\\s*[.)\\-–—:]\\s*)?${escapedBare}\\s*(?:[-–—:]\\s*|\\n+)`, 'i');
-    if (titlePrefixRegex.test(expl)) {
-      expl = expl.replace(titlePrefixRegex, '').trim();
-    } else {
-      const genericRomanPrefixRegex = /^(?:[IVXLCDM]+)\.\s+[^\n]{4,140}?\s+[-–—]\s+/;
-      const match = expl.match(genericRomanPrefixRegex);
-      if (match) {
-        const candidateTitle = match[0]
-          .replace(/^(?:[IVXLCDM]+)\.\s+/, '')
-          .replace(/\s+[-–—]\s+$/, '')
-          .trim()
-          .toLowerCase();
-        if (
-          candidateTitle === bareTitle.toLowerCase() ||
-          bareTitle.toLowerCase().includes(candidateTitle) ||
-          candidateTitle.includes(bareTitle.toLowerCase())
-        ) {
-          expl = expl.slice(match[0].length).trim();
+        const { explanationBody, extractedApplication } = splitEmbeddedApplicationServer(String(pt?.explanation || ''));
+        let expl = stripSubsectionMarkersServer(explanationBody);
+        const escapedBare = bareTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const titlePrefixRegex = new RegExp(`^(?:(?:[IVXLCDM]+|\\d+)\\s*[.)\\-–—:]\\s*)?${escapedBare}\\s*(?:[-–—:]\\s*|\\n+)`, 'i');
+        if (titlePrefixRegex.test(expl)) {
+          expl = expl.replace(titlePrefixRegex, '').trim();
+        } else {
+          const genericRomanPrefixRegex = /^(?:[IVXLCDM]+)\.\s+[^\n]{4,140}?\s+[-–—]\s+/;
+          const match = expl.match(genericRomanPrefixRegex);
+          if (match) {
+            const candidateTitle = match[0]
+              .replace(/^(?:[IVXLCDM]+)\.\s+/, '')
+              .replace(/\s+[-–—]\s+$/, '')
+              .trim()
+              .toLowerCase();
+            if (
+              candidateTitle === bareTitle.toLowerCase() ||
+              bareTitle.toLowerCase().includes(candidateTitle) ||
+              candidateTitle.includes(bareTitle.toLowerCase())
+            ) {
+              expl = expl.slice(match[0].length).trim();
+            }
+          }
         }
-      }
-    }
 
-    const paragraphs = expl
-      .replace(/^\n+/, '')
-      .split(/\n+/)
-      .map((p) => p.trim())
-      .filter(Boolean);
+        const paragraphs = expl
+          .replace(/^\n+/, '')
+          .split(/\n+/)
+          .map((p) => p.trim())
+          .filter(Boolean);
 
-    let formattedApplication = stripSubsectionMarkersServer(String(pt?.application || ''));
-    if (extractedApplication && !formattedApplication) {
-      formattedApplication = extractedApplication;
-    } else if (extractedApplication && formattedApplication && !formattedApplication.toLowerCase().includes(extractedApplication.slice(0, 40).toLowerCase())) {
-      formattedApplication = `${extractedApplication}\n\n${formattedApplication}`;
-    }
+        let formattedApplication = stripSubsectionMarkersServer(String(pt?.application || ''));
+        if (extractedApplication && !formattedApplication) {
+          formattedApplication = extractedApplication;
+        } else if (extractedApplication && formattedApplication && !formattedApplication.toLowerCase().includes(extractedApplication.slice(0, 40).toLowerCase())) {
+          formattedApplication = `${extractedApplication}\n\n${formattedApplication}`;
+        }
 
-    if ((!formattedApplication || formattedApplication.length < 25) && paragraphs.length >= 2) {
-      const lastPara = paragraphs[paragraphs.length - 1];
-      if (looksLikePastoralApplicationServer(lastPara)) {
-        paragraphs.pop();
-        formattedApplication = formattedApplication ? `${lastPara}\n\n${formattedApplication}` : lastPara;
-      }
-    }
+        if ((!formattedApplication || formattedApplication.length < 25) && paragraphs.length >= 2) {
+          const lastPara = paragraphs[paragraphs.length - 1];
+          if (looksLikePastoralApplicationServer(lastPara)) {
+            paragraphs.pop();
+            formattedApplication = formattedApplication ? `${lastPara}\n\n${formattedApplication}` : lastPara;
+          }
+        }
 
-    const formattedExplanation = paragraphs.join('\n\n');
+        const formattedExplanation = paragraphs.join('\n\n');
+        const sanitizedIllustration =
+          pt?.illustration && typeof pt.illustration === 'object'
+            ? {
+                ...pt.illustration,
+                description: pt.illustration.description
+                  ? sanitizePulpitPortugueseServer(String(pt.illustration.description))
+                  : pt.illustration.description,
+              }
+            : pt?.illustration;
 
-    return {
-      ...pt,
-      title: romanTitle,
-      explanation: formattedExplanation,
-      application: formattedApplication
-    };
-  });
+        return {
+          ...pt,
+          title: romanTitle,
+          precedingTransition: pt?.precedingTransition
+            ? sanitizePulpitPortugueseServer(String(pt.precedingTransition))
+            : pt?.precedingTransition,
+          explanation: formattedExplanation,
+          illustration: sanitizedIllustration,
+          application: formattedApplication
+        };
+      })
+    : data.expositoryPoints;
 
   const applications = Array.isArray(data.applications)
     ? data.applications.map((a: any) => stripSubsectionMarkersServer(String(a || '')))
     : data.applications;
 
+  const illustrations = Array.isArray(data.illustrations)
+    ? data.illustrations.map((ill: any) =>
+        ill && typeof ill === 'object'
+          ? {
+              ...ill,
+              description: ill.description
+                ? sanitizePulpitPortugueseServer(String(ill.description))
+                : ill.description,
+            }
+          : ill
+      )
+    : data.illustrations;
+
+  const tags = Array.isArray(data.tags)
+    ? data.tags.map((t: any) => sanitizePulpitPortugueseServer(String(t || '')))
+    : data.tags;
+
   return {
     ...data,
+    title: data.title ? sanitizePulpitPortugueseServer(String(data.title)) : data.title,
+    theme: data.theme ? sanitizePulpitPortugueseServer(String(data.theme)) : data.theme,
+    introduction: data.introduction ? sanitizePulpitPortugueseServer(String(data.introduction)) : data.introduction,
+    biblicalContext: data.biblicalContext ? sanitizePulpitPortugueseServer(String(data.biblicalContext)) : data.biblicalContext,
+    conclusion: data.conclusion ? sanitizePulpitPortugueseServer(String(data.conclusion)) : data.conclusion,
+    pastoralAppeal: data.pastoralAppeal ? sanitizePulpitPortugueseServer(String(data.pastoralAppeal)) : data.pastoralAppeal,
     expositoryPoints,
-    applications
+    illustrations,
+    applications,
+    tags
   };
+}
+
+function sanitizeEvaluationLanguageServer(data: any): any {
+  if (!data || typeof data !== 'object') return data;
+  return {
+    ...data,
+    faithfulnessComment: data.faithfulnessComment ? sanitizePulpitPortugueseServer(String(data.faithfulnessComment)) : data.faithfulnessComment,
+    coherenceComment: data.coherenceComment ? sanitizePulpitPortugueseServer(String(data.coherenceComment)) : data.coherenceComment,
+    christocentrismComment: data.christocentrismComment ? sanitizePulpitPortugueseServer(String(data.christocentrismComment)) : data.christocentrismComment,
+    clarityComment: data.clarityComment ? sanitizePulpitPortugueseServer(String(data.clarityComment)) : data.clarityComment,
+    artificialityWarning: data.artificialityWarning ? sanitizePulpitPortugueseServer(String(data.artificialityWarning)) : data.artificialityWarning,
+    moralismWarning: data.moralismWarning ? sanitizePulpitPortugueseServer(String(data.moralismWarning)) : data.moralismWarning,
+    clichesWithSuggestions: Array.isArray(data.clichesWithSuggestions)
+      ? data.clichesWithSuggestions.map((item: any) => ({
+          ...item,
+          suggestion: item?.suggestion ? sanitizePulpitPortugueseServer(String(item.suggestion)) : item?.suggestion,
+        }))
+      : data.clichesWithSuggestions,
+    suggestedImprovements: Array.isArray(data.suggestedImprovements)
+      ? data.suggestedImprovements.map((imp: any) => sanitizePulpitPortugueseServer(String(imp || '')))
+      : data.suggestedImprovements,
+  };
+}
+
+function sanitizeSeriesLanguageServer(data: any): any {
+  if (!data || typeof data !== 'object') return data;
+  return {
+    ...data,
+    title: data.title ? sanitizePulpitPortugueseServer(String(data.title)) : data.title,
+    generalTheme: data.generalTheme ? sanitizePulpitPortugueseServer(String(data.generalTheme)) : data.generalTheme,
+    campaign: data.campaign ? sanitizePulpitPortugueseServer(String(data.campaign)) : data.campaign,
+    sermons: Array.isArray(data.sermons)
+      ? data.sermons.map((s: any) => ({
+          ...s,
+          title: s?.title ? sanitizePulpitPortugueseServer(String(s.title)) : s?.title,
+          coreIdea: s?.coreIdea ? sanitizePulpitPortugueseServer(String(s.coreIdea)) : s?.coreIdea,
+          keyPoints: Array.isArray(s?.keyPoints)
+            ? s.keyPoints.map((kp: any) => sanitizePulpitPortugueseServer(String(kp || '')))
+            : s?.keyPoints,
+          pastoralApplication: s?.pastoralApplication
+            ? sanitizePulpitPortugueseServer(String(s.pastoralApplication))
+            : s?.pastoralApplication,
+        }))
+      : data.sermons,
+  };
+}
+
+function sanitizeChatLanguageServer(data: any): any {
+  if (!data || typeof data !== 'object') return data;
+  return {
+    ...data,
+    answeringText: data.answeringText ? sanitizePulpitPortugueseServer(String(data.answeringText)) : data.answeringText,
+    historicalContext: data.historicalContext ? sanitizePulpitPortugueseServer(String(data.historicalContext)) : data.historicalContext,
+    philologicalNotes: data.philologicalNotes ? sanitizePulpitPortugueseServer(String(data.philologicalNotes)) : data.philologicalNotes,
+    theologicalCore: data.theologicalCore ? sanitizePulpitPortugueseServer(String(data.theologicalCore)) : data.theologicalCore,
+    homileticalSeeds: Array.isArray(data.homileticalSeeds)
+      ? data.homileticalSeeds.map((seed: any) => sanitizePulpitPortugueseServer(String(seed || '')))
+      : data.homileticalSeeds,
+  };
+}
+
+function sanitizePericopeLanguageServer(data: any): any {
+  if (!data || typeof data !== 'object') return data;
+  return {
+    ...data,
+    identification: data.identification && typeof data.identification === 'object'
+      ? {
+          mainSubject: sanitizePulpitPortugueseServer(String(data.identification.mainSubject || '')),
+          mainVerb: sanitizePulpitPortugueseServer(String(data.identification.mainVerb || '')),
+          narrativeTension: sanitizePulpitPortugueseServer(String(data.identification.narrativeTension || '')),
+          textMovement: sanitizePulpitPortugueseServer(String(data.identification.textMovement || '')),
+          climax: sanitizePulpitPortugueseServer(String(data.identification.climax || '')),
+          authorPurpose: sanitizePulpitPortugueseServer(String(data.identification.authorPurpose || '')),
+        }
+      : data.identification,
+    possibilities: Array.isArray(data.possibilities)
+      ? data.possibilities.map((p: any) => ({
+          ...p,
+          themeName: p?.themeName ? sanitizePulpitPortugueseServer(String(p.themeName)) : p?.themeName,
+          hermeneuticalRisk: p?.hermeneuticalRisk ? sanitizePulpitPortugueseServer(String(p.hermeneuticalRisk)) : p?.hermeneuticalRisk,
+          observation: p?.observation ? sanitizePulpitPortugueseServer(String(p.observation)) : p?.observation,
+        }))
+      : data.possibilities,
+  };
+}
+
+function sanitizeSieveLayerServer(layer: any): any {
+  if (!layer || typeof layer !== 'object') return layer;
+  return {
+    ...layer,
+    title: layer.title ? sanitizePulpitPortugueseServer(String(layer.title)) : layer.title,
+    summary: layer.summary ? sanitizePulpitPortugueseServer(String(layer.summary)) : layer.summary,
+    keyPoints: Array.isArray(layer.keyPoints)
+      ? layer.keyPoints.map((kp: any) => sanitizePulpitPortugueseServer(String(kp || '')))
+      : layer.keyPoints,
+    scripturalWarning: layer.scripturalWarning ? sanitizePulpitPortugueseServer(String(layer.scripturalWarning)) : layer.scripturalWarning,
+    historicalOrCulturalReferences: Array.isArray(layer.historicalOrCulturalReferences)
+      ? layer.historicalOrCulturalReferences.map((r: any) => sanitizePulpitPortugueseServer(String(r || '')))
+      : layer.historicalOrCulturalReferences,
+  };
+}
+
+function sanitizeSieveLanguageServer(data: any): any {
+  if (!data || typeof data !== 'object') return data;
+  return {
+    ...data,
+    sermonTitle: data.sermonTitle ? sanitizePulpitPortugueseServer(String(data.sermonTitle)) : data.sermonTitle,
+    centralTheme: data.centralTheme ? sanitizePulpitPortugueseServer(String(data.centralTheme)) : data.centralTheme,
+    classicHistoricalObjections: sanitizeSieveLayerServer(data.classicHistoricalObjections),
+    newCulturalTrends: sanitizeSieveLayerServer(data.newCulturalTrends),
+    falseReligiousTolerance: sanitizeSieveLayerServer(data.falseReligiousTolerance),
+    magisterialPeroration: data.magisterialPeroration && typeof data.magisterialPeroration === 'object'
+      ? {
+          ...data.magisterialPeroration,
+          title: data.magisterialPeroration.title ? sanitizePulpitPortugueseServer(String(data.magisterialPeroration.title)) : data.magisterialPeroration.title,
+          text: data.magisterialPeroration.text ? sanitizePulpitPortugueseServer(String(data.magisterialPeroration.text)) : data.magisterialPeroration.text,
+          pastoralCharge: data.magisterialPeroration.pastoralCharge ? sanitizePulpitPortugueseServer(String(data.magisterialPeroration.pastoralCharge)) : data.magisterialPeroration.pastoralCharge,
+        }
+      : data.magisterialPeroration,
+  };
+}
+
+function sanitizeIllustrationsLanguageServer(data: any): any {
+  if (!data || typeof data !== 'object') return data;
+  return {
+    ...data,
+    topic: data.topic ? sanitizePulpitPortugueseServer(String(data.topic)) : data.topic,
+    illustrations: Array.isArray(data.illustrations)
+      ? data.illustrations.map((ill: any) => ({
+          ...ill,
+          title: ill?.title ? sanitizePulpitPortugueseServer(String(ill.title)) : ill?.title,
+          story: ill?.story ? sanitizePulpitPortugueseServer(String(ill.story)) : ill?.story,
+          moral: ill?.moral ? sanitizePulpitPortugueseServer(String(ill.moral)) : ill?.moral,
+        }))
+      : data.illustrations,
+  };
+}
+
+function sanitizePipelineStageLanguageServer(stage: number, data: any): any {
+  if (!data || typeof data !== 'object') return data;
+  if (stage === 2) {
+    return {
+      ...data,
+      fullText: data.fullText ? sanitizePulpitPortugueseServer(String(data.fullText)) : data.fullText,
+      sections: Array.isArray(data.sections)
+        ? data.sections.map((s: any) => ({
+            ...s,
+            text: s?.text ? sanitizePulpitPortugueseServer(String(s.text)) : s?.text,
+          }))
+        : data.sections,
+    };
+  }
+  if (stage === 3) {
+    return {
+      ...data,
+      theme: data.theme ? sanitizePulpitPortugueseServer(String(data.theme)) : data.theme,
+      bigIdea: data.bigIdea ? sanitizePulpitPortugueseServer(String(data.bigIdea)) : data.bigIdea,
+      purpose: data.purpose ? sanitizePulpitPortugueseServer(String(data.purpose)) : data.purpose,
+      structure: Array.isArray(data.structure)
+        ? data.structure.map((b: any) => ({
+            ...b,
+            title: b?.title ? sanitizePulpitPortugueseServer(String(b.title)) : b?.title,
+            content: b?.content ? sanitizePulpitPortugueseServer(String(b.content)) : b?.content,
+          }))
+        : data.structure,
+      resources: Array.isArray(data.resources)
+        ? data.resources.map((r: any) => ({
+            ...r,
+            description: r?.description ? sanitizePulpitPortugueseServer(String(r.description)) : r?.description,
+          }))
+        : data.resources,
+    };
+  }
+  if (stage === 4) {
+    return {
+      ...data,
+      exegesis: data.exegesis ? sanitizePulpitPortugueseServer(String(data.exegesis)) : data.exegesis,
+      structure: data.structure ? sanitizePulpitPortugueseServer(String(data.structure)) : data.structure,
+      applications: data.applications ? sanitizePulpitPortugueseServer(String(data.applications)) : data.applications,
+      introduction: data.introduction ? sanitizePulpitPortugueseServer(String(data.introduction)) : data.introduction,
+      conclusion: data.conclusion ? sanitizePulpitPortugueseServer(String(data.conclusion)) : data.conclusion,
+      strengths: Array.isArray(data.strengths) ? data.strengths.map((x: any) => sanitizePulpitPortugueseServer(String(x || ''))) : data.strengths,
+      improvements: Array.isArray(data.improvements) ? data.improvements.map((x: any) => sanitizePulpitPortugueseServer(String(x || ''))) : data.improvements,
+      suggestions: Array.isArray(data.suggestions) ? data.suggestions.map((x: any) => sanitizePulpitPortugueseServer(String(x || ''))) : data.suggestions,
+    };
+  }
+  if (stage === 5) {
+    return {
+      ...data,
+      editedManuscript: data.editedManuscript ? sanitizePulpitPortugueseServer(String(data.editedManuscript)) : data.editedManuscript,
+    };
+  }
+  if (stage === 6) {
+    return {
+      ...data,
+      libro: data.libro ? sanitizePulpitPortugueseServer(String(data.libro)) : data.libro,
+      apostila: data.apostila ? sanitizePulpitPortugueseServer(String(data.apostila)) : data.apostila,
+      devocional: data.devocional ? sanitizePulpitPortugueseServer(String(data.devocional)) : data.devocional,
+      estudoBiblico: Array.isArray(data.estudoBiblico)
+        ? data.estudoBiblico.map((q: any) => sanitizePulpitPortugueseServer(String(q || '')))
+        : data.estudoBiblico
+          ? sanitizePulpitPortugueseServer(String(data.estudoBiblico))
+          : data.estudoBiblico,
+      pequenosGrupos: data.pequenosGrupos ? sanitizePulpitPortugueseServer(String(data.pequenosGrupos)) : data.pequenosGrupos,
+      escolaBiblica: data.escolaBiblica ? sanitizePulpitPortugueseServer(String(data.escolaBiblica)) : data.escolaBiblica,
+      podcast: data.podcast ? sanitizePulpitPortugueseServer(String(data.podcast)) : data.podcast,
+      video: data.video ? sanitizePulpitPortugueseServer(String(data.video)) : data.video,
+      redesSociais: data.redesSociais && typeof data.redesSociais === 'object'
+        ? {
+            ...data.redesSociais,
+            carrossel: Array.isArray(data.redesSociais.carrossel)
+              ? data.redesSociais.carrossel.map((c: any) => sanitizePulpitPortugueseServer(String(c || '')))
+              : data.redesSociais.carrossel,
+            legenda: data.redesSociais.legenda ? sanitizePulpitPortugueseServer(String(data.redesSociais.legenda)) : data.redesSociais.legenda,
+          }
+        : data.redesSociais,
+    };
+  }
+  return data;
 }
 
 function getMockSermon(title: string, theme: string, scripture: string, style: string, churchProfile: string, audience: string, bibleVersion: string, isOutline: boolean, seriesName?: string) {
@@ -3127,7 +3944,7 @@ function getMockTheologicalSieve(title: string, scripture: string, theme: string
       summary: "A pós-modernidade opera mediante o individualismo expressivo e o moralismo terapêutico deísta, nos quais Deus existe primordialmente para validar os desejos imediatos do indivíduo e promover bem-estar subjetivo, em vez de exigir senhorio, renúncia e santidade pactual.",
       keyPoints: [
         "Individualismo Expressivo: A cultura contemporânea dita que 'ser autêntico' significa obedecer a qualquer impulso interno. O texto sagrado, em contraste direto, exige mortificação do ego e submissão da mente à verdade revelada de Deus.",
-        "Moralismo Terapêutico Deísta: A mensagem da cruz é diluída em coaching de autoaperfeiçoamento e bem-estar psicológico, trocando o 'arrependam-se e creiam' por 'sintam-se bem consigo mesmos'.",
+        "Moralismo Terapêutico Deísta: A mensagem da cruz é diluída em direcionamento superficial de autoaperfeiçoamento e bem-estar psicológico, trocando o 'arrependam-se e creiam' por 'sintam-se bem consigo mesmos'.",
         "Hiperconformidade Invisível às Redes: O verbo bíblico 'syschematizesthe' adverte contra ser prensado pela fôrma deste século; hoje essa fôrma atua nos algoritmos, na pressa consumista e no relativismo ético dos costumes."
       ],
       scripturalWarning: "Quando o púlpito silencia sobre o confronto entre o Reino de Deus e o espírito da época (Zeitgeist), a igreja deixa de ser coluna e baluarte da verdade para se tornar reflexo pálido do secularismo.",

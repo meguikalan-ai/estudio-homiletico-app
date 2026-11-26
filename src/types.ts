@@ -118,7 +118,7 @@ export interface Sermon {
   audience: string;
   bibleVersion: string;
   isOutline: boolean;
-  duration?: '20' | '30' | '40' | '60';
+  duration?: '10' | '20' | '30' | '40' | '60';
   tags: string[];
   seriesName?: string;
   hymns: SermonHymns;
@@ -127,6 +127,7 @@ export interface Sermon {
   
   evaluation?: SermonEvaluation;
   history?: SermonHistoryEntry[];
+  derivation?: SermonDerivationInfo;
   updatedAt?: number;
 }
 
@@ -276,8 +277,18 @@ export interface GenerateThemesRequest {
   existingTitles?: string[];
 }
 
-export type SermonDerivationDuration = '20' | '30' | '40';
-export type SermonDerivationMode = 'duration' | 'bible-study' | 'custom';
+export type SermonDerivationDuration = '10' | '20' | '30' | '40';
+export type SermonDerivationMode =
+  | 'duration'
+  | 'bible-study'
+  | 'devotional'
+  | 'pulpit-card'
+  | 'ebd'
+  | 'catechetical'
+  | 'evangelistic'
+  | 'counseling'
+  | 'post-service'
+  | 'custom';
 
 export interface SermonDerivationContext {
   mode: SermonDerivationMode;
@@ -296,6 +307,16 @@ export interface SermonDerivationConfig {
   audience: string;
   style: Sermon['style'];
   notes: string;
+}
+
+export interface SermonDerivationInfo {
+  mode: SermonDerivationMode;
+  duration: SermonDerivationDuration;
+  sourceSermonId: string;
+  sourceTitle: string;
+  sourceScripture?: string;
+  audience?: string;
+  derivedAt?: number;
 }
 
 export interface SermonDerivationDraftMeta {

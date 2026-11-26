@@ -315,6 +315,12 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({
   const [loadingTopicId, setLoadingTopicId] = useState<string | null>(null);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+  const [lastRetryQuery, setLastRetryQuery] = useState<{
+    textToSend: string;
+    targetTopicId: string;
+    chatHistory: Array<{ role: 'user' | 'assistant'; content: string }>;
+    replaceMessageId?: string;
+  } | null>(null);
   const [syncState, setSyncState] = useState<'synced' | 'syncing' | 'error'>('syncing');
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [sentMessageId, setSentMessageId] = useState<string | null>(null);
@@ -820,12 +826,8 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({
           message: textToSend,
           chatHistory
         },
-        { retries: 1, timeoutMs: 85000 }
+        { retries: 1, timeoutMs: 175000 }
       );
-
-      if (data.fallbackActive) {
-        setFallbackNotice(data.fallbackReason || 'Consulta processada em regime de contingência.');
-      }
 
       const replyTs = Date.now();
       const assistantMessage: TheologicalChatMessage = {
@@ -836,6 +838,18 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({
         timestamp: replyTs,
         exegesisData: data
       };
+
+      if (data.fallbackActive) {
+        setFallbackNotice(data.fallbackReason || 'Consulta processada em regime de contingência.');
+        setLastRetryQuery({
+          textToSend,
+          targetTopicId,
+          chatHistory,
+          replaceMessageId: assistantMessage.id
+        });
+      } else {
+        setLastRetryQuery(null);
+      }
 
       const extractedPassage = extractScriptureFromStudy(assistantMessage, textToSend);
 
@@ -865,9 +879,64 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({
       console.error(err);
       const errMsg = err instanceof Error ? err.message : 'Não foi possível obter resposta no momento.';
       setErrorNotice(`Falha ao consultar o assistente: ${errMsg}. Verifique a conexão com o servidor.`);
+      setLastRetryQuery({
+        textToSend,
+        targetTopicId,
+        chatHistory: currentTopicHistory.slice(-8).map(m => ({
+          role: m.role,
+          content: m.content
+        }))
+      });
     } finally {
       setLoadingTopicId(null);
       setTimeout(() => textareaRef.current?.focus(), 100);
+    }
+  };
+
+  const handleRetryLastChatQuery = async () => {
+    const retry = lastRetryQuery;
+    if (!retry || isLoading) return;
+    setErrorNotice(null);
+    setFallbackNotice(null);
+    setLoadingTopicId(retry.targetTopicId);
+    try {
+      const data = await safeApiPost<ExegesisResponse & { fallbackActive?: boolean; fallbackReason?: string }>(
+        '/api/gemini/chat-bible',
+        {
+          message: retry.textToSend,
+          chatHistory: retry.chatHistory
+        },
+        { retries: 1, timeoutMs: 175000 }
+      );
+
+      const replyTs = Date.now();
+      const assistantMessage: TheologicalChatMessage = {
+        id: retry.replaceMessageId || `assistant-${replyTs}`,
+        topicId: retry.targetTopicId,
+        role: 'assistant',
+        content: data.answeringText || 'Estudo concluído com sucesso.',
+        timestamp: replyTs,
+        exegesisData: data
+      };
+
+      if (data.fallbackActive) {
+        setFallbackNotice(data.fallbackReason || 'Consulta processada em regime de contingência.');
+      } else {
+        setLastRetryQuery(null);
+      }
+
+      setAllMessages(prev => {
+        if (retry.replaceMessageId && prev.some(m => m.id === retry.replaceMessageId)) {
+          return prev.map(m => (m.id === retry.replaceMessageId ? assistantMessage : m));
+        }
+        return [...prev, assistantMessage];
+      });
+      saveChatMessageToCloud(assistantMessage, FIXED_PASTORAL_UID).catch(() => {});
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Não foi possível obter resposta no momento.';
+      setErrorNotice(`Falha ao consultar o assistente: ${errMsg}.`);
+    } finally {
+      setLoadingTopicId(null);
     }
   };
 
@@ -1237,18 +1306,34 @@ export const TheologicalChat: React.FC<TheologicalChatProps> = ({
           </div>
 
           {fallbackNotice && (
-            <div className="mx-3 sm:mx-4 mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-center justify-between gap-2 shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <div className="mx-3 sm:mx-4 mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shrink-0">
+              <div className="flex items-start sm:items-center gap-2 min-w-0">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
                 <span className="break-words">{fallbackNotice}</span>
               </div>
-              <button
-                type="button"
-                onClick={() => setFallbackNotice(null)}
-                className="font-bold px-2 py-0.5 cursor-pointer shrink-0"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                {lastRetryQuery && (
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => void handleRetryLastChatQuery()}
+                    className="inline-flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 disabled:opacity-60 text-white font-bold px-2.5 py-1 rounded-lg transition-colors text-[10px] uppercase tracking-wider cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+                    <span>{isLoading ? 'Tentando...' : 'Tentar novamente'}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFallbackNotice(null);
+                    setLastRetryQuery(null);
+                  }}
+                  className="text-amber-800 hover:text-amber-950 font-bold px-2 py-1 rounded-lg hover:bg-amber-500/10 border border-amber-500/20 text-[10px] uppercase tracking-wider cursor-pointer shrink-0"
+                >
+                  ENTENDI
+                </button>
+              </div>
             </div>
           )}
 

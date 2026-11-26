@@ -550,6 +550,18 @@ export function sanitizeSermonForFirestore(sermon: Sermon, userId?: string): Rec
     }));
   }
 
+  if (sermon.derivation) {
+    sanitized.derivation = cleanUndefinedRecursively({
+      mode: sermon.derivation.mode,
+      duration: sermon.derivation.duration,
+      sourceSermonId: (sermon.derivation.sourceSermonId || '').trim(),
+      sourceTitle: (sermon.derivation.sourceTitle || '').trim(),
+      sourceScripture: (sermon.derivation.sourceScripture || '').trim(),
+      audience: (sermon.derivation.audience || '').trim(),
+      derivedAt: Number(sermon.derivation.derivedAt) || Number(sermon.updatedAt) || Date.now()
+    });
+  }
+
   return cleanUndefinedRecursively(sanitized);
 }
 
@@ -1054,6 +1066,9 @@ export function areSermonListsEqual(listA: Sermon[], listB: Sermon[]): boolean {
     const timeB = b.updatedAt || new Date(b.date).getTime() || 0;
     if (timeA !== timeB) return false;
     if (a.title !== b.title) return false;
+    if ((a.duration || '') !== (b.duration || '')) return false;
+    if ((a.derivation?.mode || '') !== (b.derivation?.mode || '')) return false;
+    if ((a.derivation?.duration || '') !== (b.derivation?.duration || '')) return false;
     if (a.isFavorite !== b.isFavorite) return false;
     if (a.isArchived !== b.isArchived) return false;
   }

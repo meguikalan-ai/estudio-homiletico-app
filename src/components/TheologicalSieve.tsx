@@ -283,7 +283,7 @@ export const TheologicalSieve: React.FC<TheologicalSieveProps> = ({
           mainPoints: payloadPoints,
           outlineText: payloadPoints
         },
-        { retries: 1, timeoutMs: 85000 }
+        { retries: 1, timeoutMs: 175000 }
       );
       
       if (data.fallbackActive) {
@@ -456,18 +456,29 @@ ${activeResult.magisterialPeroration.pastoralCharge}
       </div>
 
       {fallbackNotice && (
-        <div className="p-4 bg-amber-500/10 rounded-xl border border-amber-500/20 text-amber-950 text-xs flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
-            <span>{fallbackNotice}</span>
+        <div className="p-4 bg-amber-500/10 rounded-xl border border-amber-500/20 text-amber-950 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start sm:items-center gap-2 min-w-0">
+            <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5 sm:mt-0" />
+            <span className="break-words">{fallbackNotice}</span>
           </div>
-          <button 
-            type="button" 
-            onClick={() => setFallbackNotice(null)} 
-            className="text-amber-800 hover:text-amber-950 font-bold px-2 py-0.5 rounded cursor-pointer"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+            <button
+              type="button"
+              disabled={isAnalyzing}
+              onClick={() => void handleRunTheologicalSieve()}
+              className="inline-flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 disabled:opacity-60 text-white font-bold px-3 py-1.5 rounded-lg transition-colors text-[10px] uppercase tracking-wider cursor-pointer shadow-2xs"
+            >
+              <RefreshCw className={`w-3 h-3 ${isAnalyzing ? 'animate-spin' : ''}`} />
+              <span>{isAnalyzing ? 'Tentando...' : 'Tentar novamente'}</span>
+            </button>
+            <button 
+              type="button" 
+              onClick={() => setFallbackNotice(null)} 
+              className="text-amber-800 hover:text-amber-950 font-bold px-2.5 py-1.5 rounded-lg hover:bg-amber-500/10 border border-amber-500/15 transition-colors text-[10px] uppercase tracking-wider cursor-pointer"
+            >
+              ENTENDI
+            </button>
+          </div>
         </div>
       )}
 

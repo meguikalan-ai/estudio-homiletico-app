@@ -16,8 +16,345 @@ export function stripRomanOrNumericPrefix(title: string): string {
 }
 
 export function formatRomanPointTitle(title: string, index: number): string {
-  const cleanTitle = stripRomanOrNumericPrefix(title) || `Tópico ${index + 1}`;
+  const cleanTitle = sanitizePulpitPortuguese(stripRomanOrNumericPrefix(title)) || `Tópico ${index + 1}`;
   return `${toRomanNumeral(index + 1)}. ${cleanTitle}`;
+}
+
+interface AnglicismRule {
+  pattern: RegExp;
+  replace: (match: string, ...groups: string[]) => string;
+}
+
+function matchWordCase(sample: string, replacement: string): string {
+  if (!sample) return replacement;
+  if (sample === sample.toUpperCase() && sample !== sample.toLowerCase()) {
+    return replacement.toUpperCase();
+  }
+  const firstChar = sample.charAt(0);
+  if (firstChar === firstChar.toUpperCase() && firstChar !== firstChar.toLowerCase()) {
+    return replacement.charAt(0).toUpperCase() + replacement.slice(1);
+  }
+  return replacement;
+}
+
+const ANGLICISM_RULES: AnglicismRule[] = [
+  // Remove anglicismos redundantes entre parênteses após o termo em português
+  {
+    pattern:
+      /\b(esgotamento(?:\s+(?:f[íi]sico(?:\s+e\s+mental)?|mental|emocional|profissional))?)\s*\(\s*burnout\s*\)/gi,
+    replace: (_m, base) => base,
+  },
+  {
+    pattern:
+      /\b([a-záéíóúâêôãõç]+(?:\s+[a-záéíóúâêôãõç]+){0,2})\s*\(\s*(?:sprint|mindset|insights?|feedbacks?|triggers?|reset|burnout|check-?in|coaching|stress|deadlines?|follow-?up|timing|background|briefing|workshops?|networking|marketing|feeling|target|gap|upgrade|lifestyle|mood|vibe)\s*\)/gi,
+    replace: (_m, base) => base,
+  },
+  // Expressões compostas e concordância de gênero/artigo
+  {
+    pattern: /\bstatus\s+quo\b/gi,
+    replace: (m) => matchWordCase(m, 'estado atual das coisas'),
+  },
+  {
+    pattern: /\b(a|à|da|na|pela|uma|sua|essa|esta|alta|boa|má|nova|grande|verdadeira)\s+(status)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCase(word, 'posição')}`,
+  },
+  {
+    pattern: /\bstatus\s+social\b/gi,
+    replace: (m) => matchWordCase(m, 'prestígio social'),
+  },
+  {
+    pattern: /\bstatus\b/gi,
+    replace: (m) => matchWordCase(m, 'prestígio'),
+  },
+  {
+    pattern: /\b(a|à|da|na|pela|uma|sua|essa|esta|alta|boa|má|melhor|pior|nova|velha|grande|verdadeira)\s+(performance)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCase(word, 'atuação')}`,
+  },
+  {
+    pattern: /\bperformances\b/gi,
+    replace: (m) => matchWordCase(m, 'desempenhos'),
+  },
+  {
+    pattern: /\bperformance\b/gi,
+    replace: (m) => matchWordCase(m, 'desempenho'),
+  },
+  {
+    pattern: /\bburnout\b/gi,
+    replace: (m) => matchWordCase(m, 'esgotamento'),
+  },
+  {
+    pattern: /\b(a|à|da|na|pela|uma|sua|essa|esta|nova|velha|grande|verdadeira)\s+(mindset)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCase(word, 'mentalidade')}`,
+  },
+  {
+    pattern: /\bmindset\b/gi,
+    replace: (m) => matchWordCase(m, 'modo de pensar'),
+  },
+  {
+    pattern: /\binsights\b/gi,
+    replace: (m) => matchWordCase(m, 'discernimentos'),
+  },
+  {
+    pattern: /\b(a|à|da|na|pela|uma|sua|essa|esta|nova|boa|grande|verdadeira)\s+(insight)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCase(word, 'percepção')}`,
+  },
+  {
+    pattern: /\binsight\b/gi,
+    replace: (m) => matchWordCase(m, 'discernimento'),
+  },
+  {
+    pattern: /\bfeedbacks\b/gi,
+    replace: (m) => matchWordCase(m, 'retornos'),
+  },
+  {
+    pattern: /\bfeedback\b/gi,
+    replace: (m) => matchWordCase(m, 'retorno'),
+  },
+  {
+    pattern: /\b(o|os|ao|aos|do|dos|no|nos|um|uns)\s+(sprints?)\b/gi,
+    replace: (_m, article, word) =>
+      `${article} ${matchWordCase(word, word.toLowerCase().endsWith('s') ? 'esforços intensos' : 'esforço intenso')}`,
+  },
+  {
+    pattern: /\bsprints\b/gi,
+    replace: (m) => matchWordCase(m, 'arrancadas'),
+  },
+  {
+    pattern: /\bsprint\b/gi,
+    replace: (m) => matchWordCase(m, 'esforço intenso'),
+  },
+  {
+    pattern: /\btriggers\b/gi,
+    replace: (m) => matchWordCase(m, 'gatilhos'),
+  },
+  {
+    pattern: /\btrigger\b/gi,
+    replace: (m) => matchWordCase(m, 'gatilho'),
+  },
+  {
+    pattern: /\bresetar\b/gi,
+    replace: (m) => matchWordCase(m, 'recomeçar'),
+  },
+  {
+    pattern: /\bresetado\b/gi,
+    replace: (m) => matchWordCase(m, 'reiniciado'),
+  },
+  {
+    pattern: /\breset\b/gi,
+    replace: (m) => matchWordCase(m, 'recomeço'),
+  },
+  {
+    pattern: /\bcheck-?ins\b/gi,
+    replace: (m) => matchWordCase(m, 'acompanhamentos'),
+  },
+  {
+    pattern: /\bcheck-?in\b/gi,
+    replace: (m) => matchWordCase(m, 'acompanhamento'),
+  },
+  {
+    pattern: /\bcoaching\b/gi,
+    replace: (m) => matchWordCase(m, 'direcionamento motivacional'),
+  },
+  {
+    pattern: /\bcoaches\b/gi,
+    replace: (m) => matchWordCase(m, 'instrutores'),
+  },
+  {
+    pattern: /\bcoach\b/gi,
+    replace: (m) => matchWordCase(m, 'instrutor'),
+  },
+  {
+    pattern: /\bstress\b/gi,
+    replace: (m) => matchWordCase(m, 'estresse'),
+  },
+  {
+    pattern: /\bdeadlines\b/gi,
+    replace: (m) => matchWordCase(m, 'prazos'),
+  },
+  {
+    pattern: /\bdeadline\b/gi,
+    replace: (m) => matchWordCase(m, 'prazo'),
+  },
+  {
+    pattern: /\bfollow-?ups\b/gi,
+    replace: (m) => matchWordCase(m, 'acompanhamentos'),
+  },
+  {
+    pattern: /\bfollow-?up\b/gi,
+    replace: (m) => matchWordCase(m, 'acompanhamento'),
+  },
+  {
+    pattern: /\btiming\s+(certo|exato|perfeito|ideal)\b/gi,
+    replace: (_m, adj) => `momento ${adj.toLowerCase()}`,
+  },
+  {
+    pattern: /\btiming\b/gi,
+    replace: (m) => matchWordCase(m, 'momento oportuno'),
+  },
+  {
+    pattern: /\bbackground\b/gi,
+    replace: (m) => matchWordCase(m, 'histórico'),
+  },
+  {
+    pattern: /\bbriefing\b/gi,
+    replace: (m) => matchWordCase(m, 'resumo'),
+  },
+  {
+    pattern: /\b(o|os|ao|aos|do|dos|no|nos|um|uns)\s+(workshops?)\b/gi,
+    replace: (_m, article, word) =>
+      `${article} ${matchWordCase(word, word.toLowerCase().endsWith('s') ? 'seminários' : 'seminário')}`,
+  },
+  {
+    pattern: /\bworkshops\b/gi,
+    replace: (m) => matchWordCase(m, 'oficinas'),
+  },
+  {
+    pattern: /\bworkshop\b/gi,
+    replace: (m) => matchWordCase(m, 'oficina'),
+  },
+  {
+    pattern: /\b(o|do|no|um|seu)\s+(networking)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCase(word, 'círculo de contatos')}`,
+  },
+  {
+    pattern: /\bnetworking\b/gi,
+    replace: (m) => matchWordCase(m, 'rede de contatos'),
+  },
+  {
+    pattern: /\bmarketing\s+pessoal\b/gi,
+    replace: (m) => matchWordCase(m, 'autopromoção'),
+  },
+  {
+    pattern: /\b(o|do|no|um|seu)\s+(marketing)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCase(word, 'apelo promocional')}`,
+  },
+  {
+    pattern: /\bmarketing\b/gi,
+    replace: (m) => matchWordCase(m, 'divulgação'),
+  },
+  {
+    pattern: /\b(o|do|no|um|seu)\s+(feeling)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCase(word, 'senso')}`,
+  },
+  {
+    pattern: /\bfeeling\b/gi,
+    replace: (m) => matchWordCase(m, 'sensibilidade'),
+  },
+  {
+    pattern: /\btarget\b/gi,
+    replace: (m) => matchWordCase(m, 'alvo'),
+  },
+  {
+    pattern: /\b(o|os|do|dos|no|nos|um|uns)\s+(gaps?)\b/gi,
+    replace: (_m, article, word) =>
+      `${article} ${matchWordCase(word, word.toLowerCase().endsWith('s') ? 'vãos' : 'vão')}`,
+  },
+  {
+    pattern: /\bgaps\b/gi,
+    replace: (m) => matchWordCase(m, 'lacunas'),
+  },
+  {
+    pattern: /\bgap\b/gi,
+    replace: (m) => matchWordCase(m, 'lacuna'),
+  },
+  {
+    pattern: /\bupgrades\b/gi,
+    replace: (m) => matchWordCase(m, 'avanços'),
+  },
+  {
+    pattern: /\bupgrade\b/gi,
+    replace: (m) => matchWordCase(m, 'avanço'),
+  },
+  {
+    pattern: /\blifestyle\b/gi,
+    replace: (m) => matchWordCase(m, 'estilo de vida'),
+  },
+  {
+    pattern: /\bmood\b/gi,
+    replace: (m) => matchWordCase(m, 'ânimo'),
+  },
+  {
+    pattern: /\b(o|do|no|um|esse|este)\s+(vibe)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCase(word, 'clima')}`,
+  },
+  {
+    pattern: /\bvibe\b/gi,
+    replace: (m) => matchWordCase(m, 'atmosfera'),
+  },
+  {
+    pattern: /\b(o|do|no|um|esse|este)\s+(hype)\b/gi,
+    replace: (_m, article, word) => `${article} ${matchWordCase(word, 'alvoroço')}`,
+  },
+  {
+    pattern: /\bhype\b/gi,
+    replace: (m) => matchWordCase(m, 'euforia passageira'),
+  },
+  {
+    pattern: /\boverthinking\b/gi,
+    replace: (m) => matchWordCase(m, 'excesso de preocupações'),
+  },
+  {
+    pattern: /\bmultitasking\b/gi,
+    replace: (m) => matchWordCase(m, 'acúmulo de tarefas'),
+  },
+  {
+    pattern: /\bcomfort\s+zone\b/gi,
+    replace: (m) => matchWordCase(m, 'zona de conforto'),
+  },
+  {
+    pattern: /\bfake\s+news\b/gi,
+    replace: (m) => matchWordCase(m, 'notícias falsas'),
+  },
+  {
+    pattern: /\bbullying\b/gi,
+    replace: (m) => matchWordCase(m, 'intimidação'),
+  },
+  {
+    pattern: /\bhome\s+office\b/gi,
+    replace: (m) => matchWordCase(m, 'trabalho em casa'),
+  },
+  {
+    pattern: /\blockdown\b/gi,
+    replace: (m) => matchWordCase(m, 'confinamento'),
+  },
+  {
+    pattern: /\bsoft\s+skills\b/gi,
+    replace: (m) => matchWordCase(m, 'habilidades interpessoais'),
+  },
+  {
+    pattern: /\bhard\s+skills\b/gi,
+    replace: (m) => matchWordCase(m, 'habilidades técnicas'),
+  },
+  {
+    pattern: /\bbrainstorming?\b/gi,
+    replace: (m) => matchWordCase(m, 'troca de ideias'),
+  },
+  {
+    pattern: /\b(a|à|da|na|uma|sua)\s+(selfies?)\b/gi,
+    replace: (_m, article, word) =>
+      `${article} ${matchWordCase(word, word.toLowerCase().endsWith('s') ? 'fotos próprias' : 'foto própria')}`,
+  },
+  {
+    pattern: /\bselfies\b/gi,
+    replace: (m) => matchWordCase(m, 'autorretratos'),
+  },
+  {
+    pattern: /\bselfie\b/gi,
+    replace: (m) => matchWordCase(m, 'autorretrato'),
+  },
+];
+
+/**
+ * Converte preventivamente anglicismos corporativos/populares comuns em
+ * português claro e digno para púlpito, sem afetar termos bíblicos originais.
+ */
+export function sanitizePulpitPortuguese(text: string): string {
+  if (!text) return '';
+  let result = text;
+  for (const rule of ANGLICISM_RULES) {
+    result = result.replace(rule.pattern, rule.replace);
+  }
+  return result;
 }
 
 /**
@@ -27,7 +364,7 @@ export function formatRomanPointTitle(title: string, index: number): string {
 export function stripLooseSubLabels(text: string): string {
   if (!text) return '';
 
-  return text
+  const cleaned = text
     // Remove marcadores com rótulos detalhados em início de linha ou após marcador de lista
     .replace(
       /(?:^|\n)\s*(?:[•\-*]\s*)?(?:\([a-dA-D]\)|[a-dA-D][.)])\s*(?:Explica[çc][ãa]o\s+Textual(?:\s+Profunda)?(?:\s*(?:e|&)\s*Termos\s+Originais)?|Exposi[çc][ãa]o\s+do\s+Texto|Paralelos\s+Escritur[íi]sticos(?:\s+Can[ôo]nicos)?|Cristocentrismo\s+Redentor|Aconselhamento(?:\s*,?\s*(?:e|&)?\s*Confronto)?\s+Pastoral(?:\s*(?:e|&)\s*Aplica[çc][ãa]o(?:\s+P[óo]s-Moderna)?)?|Aplica[çc][ãa]o\s+Pastoral(?:\s+Direta)?|Aplica[çc][ãa]o\s+Pr[áa]tica|Aplica[çc][ãa]o)\s*[:\-–—]?\s*/gi,
@@ -54,6 +391,8 @@ export function stripLooseSubLabels(text: string): string {
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+
+  return sanitizePulpitPortuguese(cleaned);
 }
 
 const EMBEDDED_APPLICATION_REGEX =

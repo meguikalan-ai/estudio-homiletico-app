@@ -1,6 +1,25 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Trash2, Search, X, RefreshCw, Sparkles, ChevronDown, Clock, BookOpen, SlidersHorizontal, Loader2 } from 'lucide-react';
-import { Sermon, SermonDerivationDuration } from '../types';
+import {
+  Trash2,
+  Search,
+  X,
+  RefreshCw,
+  Sparkles,
+  ChevronDown,
+  Clock,
+  BookOpen,
+  SlidersHorizontal,
+  Loader2,
+  FileText,
+  Sun,
+  LayoutList,
+  GraduationCap,
+  Megaphone,
+  HeartHandshake,
+  Share2,
+  BookOpenCheck
+} from 'lucide-react';
+import { Sermon, SermonDerivationDuration, SermonDerivationMode } from '../types';
 
 /**
  * Expressão regular canônica para identificar referências bíblicas
@@ -56,6 +75,168 @@ export function normalizeCardTheme(rawTheme?: string): string {
     .trim();
 }
 
+export type CardDerivationVariant =
+  | 'original'
+  | 'outline'
+  | 'duration'
+  | 'bible-study'
+  | 'devotional'
+  | 'pulpit-card'
+  | 'ebd'
+  | 'catechetical'
+  | 'evangelistic'
+  | 'counseling'
+  | 'post-service'
+  | 'custom';
+
+export interface CardDerivationBadgeInfo {
+  label: string;
+  tooltip: string;
+  variant: CardDerivationVariant;
+  isDerived: boolean;
+  sourceTitle?: string;
+}
+
+/**
+ * Determina o selo visual de versão/derivação do sermão para identificação imediata no card.
+ * Mantém retrocompatibilidade integral com sermões antigos armazenados sem `derivation`.
+ */
+export function getCardDerivationBadge(s: Sermon): CardDerivationBadgeInfo {
+  const rawDuration = s.derivation?.duration || s.duration || '30';
+  const durationLabel = rawDuration === '60' ? '1h' : rawDuration === '10' ? '5–10 min' : `${rawDuration} min`;
+  const tags = Array.isArray(s.tags) ? s.tags : [];
+
+  if (s.derivation) {
+    const sourceTitle = (s.derivation.sourceTitle || '').trim();
+    const sourceHint = sourceTitle ? `Derivado de "${sourceTitle}"` : 'Versão derivada';
+
+    switch (s.derivation.mode) {
+      case 'bible-study':
+        return {
+          label: `Estudo Bíblico • ${durationLabel}`,
+          tooltip: `${sourceHint} — Estudo Bíblico / PG (${durationLabel})`,
+          variant: 'bible-study',
+          isDerived: true,
+          sourceTitle: sourceTitle || undefined
+        };
+      case 'devotional':
+        return {
+          label: 'Devocional • 5–10 min',
+          tooltip: `${sourceHint} — Devocional Pastoral Breve (5–10 min)`,
+          variant: 'devotional',
+          isDerived: true,
+          sourceTitle: sourceTitle || undefined
+        };
+      case 'pulpit-card':
+        return {
+          label: 'Cartão de Púlpito',
+          tooltip: `${sourceHint} — Esboço Condensado para Púlpito`,
+          variant: 'pulpit-card',
+          isDerived: true,
+          sourceTitle: sourceTitle || undefined
+        };
+      case 'ebd':
+        return {
+          label: `Lição EBD • ${durationLabel}`,
+          tooltip: `${sourceHint} — Lição de Escola Bíblica Dominical (${durationLabel})`,
+          variant: 'ebd',
+          isDerived: true,
+          sourceTitle: sourceTitle || undefined
+        };
+      case 'catechetical':
+        return {
+          label: `Catequético • ${durationLabel}`,
+          tooltip: `${sourceHint} — Estudo Catequético em Perguntas e Respostas (${durationLabel})`,
+          variant: 'catechetical',
+          isDerived: true,
+          sourceTitle: sourceTitle || undefined
+        };
+      case 'evangelistic':
+        return {
+          label: `Evangelístico • ${durationLabel}`,
+          tooltip: `${sourceHint} — Roteiro Evangelístico (${durationLabel})`,
+          variant: 'evangelistic',
+          isDerived: true,
+          sourceTitle: sourceTitle || undefined
+        };
+      case 'counseling':
+        return {
+          label: 'Aconselhamento 1-a-1',
+          tooltip: `${sourceHint} — Guia de Discipulado & Aconselhamento`,
+          variant: 'counseling',
+          isDerived: true,
+          sourceTitle: sourceTitle || undefined
+        };
+      case 'post-service':
+        return {
+          label: 'Resumo Pós-Culto',
+          tooltip: `${sourceHint} — Resumo para Boletim / WhatsApp`,
+          variant: 'post-service',
+          isDerived: true,
+          sourceTitle: sourceTitle || undefined
+        };
+      case 'custom': {
+        const audienceHint = s.derivation.audience ? ` • Público: ${s.derivation.audience}` : '';
+        return {
+          label: `Personalizado • ${durationLabel}`,
+          tooltip: `${sourceHint}${audienceHint} (${durationLabel})`,
+          variant: 'custom',
+          isDerived: true,
+          sourceTitle: sourceTitle || undefined
+        };
+      }
+      default:
+        return {
+          label: `Derivado • ${durationLabel}`,
+          tooltip: `${sourceHint} — Versão adaptada (${durationLabel})`,
+          variant: 'duration',
+          isDerived: true,
+          sourceTitle: sourceTitle || undefined
+        };
+    }
+  }
+
+  // Retrocompatibilidade para variações antigas salvas antes da persistência de `derivation`
+  const hasBibleStudyTitle = /^estudo\s+b[íi]blico\s*[:\-]/i.test(s.title || '');
+  const hasBibleStudyTag = tags.some(t => /^estudo\s+b[íi]blico$/i.test(t.trim()) || /^pg$/i.test(t.trim()));
+  if (hasBibleStudyTitle || hasBibleStudyTag) {
+    return {
+      label: `Estudo Bíblico • ${durationLabel}`,
+      tooltip: `Estudo Bíblico / PG (${durationLabel})`,
+      variant: 'bible-study',
+      isDerived: true
+    };
+  }
+
+  const hasCustomTag = tags.some(t => /^personalizado$/i.test(t.trim()));
+  const hasDerivedTag = tags.some(t => /^derivado$/i.test(t.trim()));
+  const hasDurationTitleSuffix = /\(\s*(?:20|30|40)\s*min\s*\)$/i.test((s.title || '').trim());
+  if (hasCustomTag || hasDerivedTag || hasDurationTitleSuffix) {
+    return {
+      label: `${hasCustomTag ? 'Personalizado' : 'Derivado'} • ${durationLabel}`,
+      tooltip: `${hasCustomTag ? 'Mensagem personalizada' : 'Versão derivada'} (${durationLabel})`,
+      variant: hasCustomTag ? 'custom' : 'duration',
+      isDerived: true
+    };
+  }
+
+  if (s.isOutline) {
+    return {
+      label: `Esboço • ${durationLabel}`,
+      tooltip: `Esboço homilético (${durationLabel})`,
+      variant: 'outline',
+      isDerived: false
+    };
+  }
+
+  return {
+    label: `Original • ${durationLabel}`,
+    tooltip: `Sermão original (${durationLabel})`,
+    variant: 'original',
+    isDerived: false
+  };
+}
+
 export interface SermonCardProps {
   sermon: Sermon;
   isSelected?: boolean;
@@ -71,9 +252,23 @@ export interface SermonCardProps {
   onConfirmDelete: (id: string) => void;
   onCancelDelete: () => void;
   onDeriveDuration?: (sermon: Sermon, duration: SermonDerivationDuration) => void;
-  onDeriveBibleStudy?: (sermon: Sermon) => void;
-  onOpenCustomizeDerive?: (sermon: Sermon) => void;
+  onDeriveMode?: (sermon: Sermon, mode: SermonDerivationMode) => void;
 }
+
+const DERIVATION_MENU_MODES: Array<{
+  mode: SermonDerivationMode;
+  label: string;
+  hint: string;
+}> = [
+  { mode: 'bible-study', label: 'Estudo Bíblico (PG)', hint: 'Roteiro com perguntas para grupo' },
+  { mode: 'devotional', label: 'Devocional (5–10 min)', hint: 'Reflexão breve e oração final' },
+  { mode: 'pulpit-card', label: 'Cartão de Púlpito', hint: 'Esboço condensado em tópicos' },
+  { mode: 'ebd', label: 'Lição de EBD', hint: 'Aula com guia para professor' },
+  { mode: 'catechetical', label: 'Estudo Catequético', hint: 'Perguntas e respostas doutrinárias' },
+  { mode: 'evangelistic', label: 'Roteiro Evangelístico', hint: 'Linguagem acessível e convite' },
+  { mode: 'counseling', label: 'Aconselhamento (1-a-1)', hint: 'Discipulado e cuidado pessoal' },
+  { mode: 'post-service', label: 'Resumo Pós-Culto', hint: 'Pronto para boletim e WhatsApp' }
+];
 
 /**
  * Card de Sermão na Biblioteca - Estrutura Compacta (Modelo 3):
@@ -98,16 +293,41 @@ export const SermonLibraryCard: React.FC<SermonCardProps> = ({
   onConfirmDelete,
   onCancelDelete,
   onDeriveDuration,
-  onDeriveBibleStudy,
-  onOpenCustomizeDerive
+  onDeriveMode
 }) => {
   const { reference, version } = normalizeCardBibleMetadata(s.scripture, s.bibleVersion);
   const cleanTheme = normalizeCardTheme(s.theme);
+  const derivationBadge = getCardDerivationBadge(s);
   const formattedDate = new Date(s.date).toLocaleDateString('pt-BR');
   const [deriveMenuOpen, setDeriveMenuOpen] = useState(false);
   const deriveMenuRef = useRef<HTMLDivElement>(null);
 
-  const hasDeriveActions = Boolean(onDeriveDuration || onDeriveBibleStudy || onOpenCustomizeDerive);
+  const hasDeriveActions = Boolean(onDeriveDuration || onDeriveMode);
+
+  const badgeStyleClass =
+    derivationBadge.variant === 'bible-study'
+      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+      : derivationBadge.variant === 'devotional'
+      ? 'bg-rose-50 text-rose-800 border-rose-200'
+      : derivationBadge.variant === 'pulpit-card'
+      ? 'bg-slate-100 text-slate-800 border-slate-300'
+      : derivationBadge.variant === 'ebd'
+      ? 'bg-sky-50 text-sky-800 border-sky-200'
+      : derivationBadge.variant === 'catechetical'
+      ? 'bg-cyan-50 text-cyan-800 border-cyan-200'
+      : derivationBadge.variant === 'evangelistic'
+      ? 'bg-orange-50 text-orange-800 border-orange-200'
+      : derivationBadge.variant === 'counseling'
+      ? 'bg-teal-50 text-teal-800 border-teal-200'
+      : derivationBadge.variant === 'post-service'
+      ? 'bg-purple-50 text-purple-800 border-purple-200'
+      : derivationBadge.variant === 'custom'
+      ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
+      : derivationBadge.variant === 'duration'
+      ? 'bg-amber-50 text-amber-900 border-amber-200'
+      : derivationBadge.variant === 'outline'
+      ? 'bg-stone-100 text-stone-700 border-stone-200'
+      : 'bg-[#F5F2ED] text-[#5A5A40] border-[#E6E2DA]';
 
   useEffect(() => {
     if (!deriveMenuOpen) return;
@@ -170,13 +390,53 @@ export const SermonLibraryCard: React.FC<SermonCardProps> = ({
           <span className="text-[10px] text-gray-400 font-mono shrink-0">
             {formattedDate}
           </span>
+        </div>
+
+        {/* Linha de Versão / Derivação e Série */}
+        <div className="flex items-center flex-wrap gap-1.5">
+          <span
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold tracking-tight shrink-0 ${badgeStyleClass}`}
+            title={derivationBadge.tooltip}
+          >
+            {derivationBadge.variant === 'bible-study' ? (
+              <BookOpen className="w-2.5 h-2.5 shrink-0" />
+            ) : derivationBadge.variant === 'devotional' ? (
+              <Sun className="w-2.5 h-2.5 shrink-0" />
+            ) : derivationBadge.variant === 'pulpit-card' ? (
+              <LayoutList className="w-2.5 h-2.5 shrink-0" />
+            ) : derivationBadge.variant === 'ebd' ? (
+              <GraduationCap className="w-2.5 h-2.5 shrink-0" />
+            ) : derivationBadge.variant === 'catechetical' ? (
+              <BookOpenCheck className="w-2.5 h-2.5 shrink-0" />
+            ) : derivationBadge.variant === 'evangelistic' ? (
+              <Megaphone className="w-2.5 h-2.5 shrink-0" />
+            ) : derivationBadge.variant === 'counseling' ? (
+              <HeartHandshake className="w-2.5 h-2.5 shrink-0" />
+            ) : derivationBadge.variant === 'post-service' ? (
+              <Share2 className="w-2.5 h-2.5 shrink-0" />
+            ) : derivationBadge.variant === 'custom' ? (
+              <SlidersHorizontal className="w-2.5 h-2.5 shrink-0" />
+            ) : derivationBadge.variant === 'duration' ? (
+              <Sparkles className="w-2.5 h-2.5 shrink-0" />
+            ) : derivationBadge.variant === 'outline' ? (
+              <FileText className="w-2.5 h-2.5 shrink-0" />
+            ) : (
+              <Clock className="w-2.5 h-2.5 shrink-0" />
+            )}
+            <span>{derivationBadge.label}</span>
+          </span>
+          {derivationBadge.sourceTitle && (
+            <span
+              className="text-[10px] text-gray-500 truncate max-w-[170px]"
+              title={derivationBadge.tooltip}
+            >
+              de "{derivationBadge.sourceTitle}"
+            </span>
+          )}
           {s.seriesName && (
-            <>
-              <span className="text-gray-300 text-[10px]">•</span>
-              <span className="text-[9px] font-bold uppercase text-[#5A5A40] bg-[#5A5A40]/10 px-1.5 py-0.5 rounded truncate max-w-[120px]" title={`Série: ${s.seriesName}`}>
-                {s.seriesName}
-              </span>
-            </>
+            <span className="text-[9px] font-bold uppercase text-[#5A5A40] bg-[#5A5A40]/10 px-1.5 py-0.5 rounded truncate max-w-[130px]" title={`Série: ${s.seriesName}`}>
+              {s.seriesName}
+            </span>
           )}
         </div>
 
@@ -272,7 +532,7 @@ export const SermonLibraryCard: React.FC<SermonCardProps> = ({
                       ? 'bg-[#5A5A40]/15 text-[#2D2926] border-[#5A5A40]'
                       : 'bg-stone-50 hover:bg-[#5A5A40]/10 text-[#5A5A40] border-[#E6E2DA]'
                   }`}
-                  title="Derivar versão de 20/30/40 min, Estudo Bíblico ou personalizar"
+                  title="Derivar versão por duração ou modelo ministerial"
                 >
                   {isDeriving ? (
                     <>
@@ -292,7 +552,7 @@ export const SermonLibraryCard: React.FC<SermonCardProps> = ({
                   <div
                     role="menu"
                     onClick={(e) => e.stopPropagation()}
-                    className="absolute left-0 bottom-full mb-1.5 z-40 w-60 bg-white border border-[#E6E2DA] rounded-xl shadow-xl p-2 space-y-1.5 text-left"
+                    className="absolute right-0 sm:left-0 bottom-full mb-1.5 z-40 w-64 max-w-[calc(100vw-2rem)] max-h-[340px] overflow-y-auto bg-white border border-[#E6E2DA] rounded-xl shadow-xl p-2 space-y-1.5 text-left"
                   >
                     {onDeriveDuration && (
                       <div className="px-1.5 pt-0.5 pb-1.5 border-b border-[#F0ECE1]">
@@ -329,38 +589,53 @@ export const SermonLibraryCard: React.FC<SermonCardProps> = ({
                       </div>
                     )}
 
-                    {onDeriveBibleStudy && (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setDeriveMenuOpen(false);
-                          onDeriveBibleStudy(s);
-                        }}
-                        className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#2D2926] hover:bg-[#5A5A40]/10 flex items-center gap-2 transition-colors cursor-pointer"
-                      >
-                        <BookOpen className="w-3.5 h-3.5 text-[#5A5A40] shrink-0" />
-                        <span>Estudo Bíblico (PG)</span>
-                      </button>
-                    )}
-
-                    {onOpenCustomizeDerive && (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setDeriveMenuOpen(false);
-                          onOpenCustomizeDerive(s);
-                        }}
-                        className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#2D2926] hover:bg-[#5A5A40]/10 flex items-center gap-2 transition-colors cursor-pointer"
-                      >
-                        <SlidersHorizontal className="w-3.5 h-3.5 text-[#5A5A40] shrink-0" />
-                        <span>Personalizar Mensagem...</span>
-                      </button>
+                    {onDeriveMode && (
+                      <div className="space-y-0.5">
+                        <div className="px-1.5 pt-0.5 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                          Modelos de Derivação
+                        </div>
+                        {DERIVATION_MENU_MODES.map((item) => (
+                          <button
+                            key={item.mode}
+                            type="button"
+                            role="menuitem"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDeriveMenuOpen(false);
+                              onDeriveMode(s, item.mode);
+                            }}
+                            className="w-full px-2 py-1.5 rounded-lg text-left hover:bg-[#5A5A40]/10 flex items-start gap-2 transition-colors cursor-pointer"
+                            title={item.hint}
+                          >
+                            {item.mode === 'bible-study' ? (
+                              <BookOpen className="w-3.5 h-3.5 text-emerald-700 shrink-0 mt-0.5" />
+                            ) : item.mode === 'devotional' ? (
+                              <Sun className="w-3.5 h-3.5 text-rose-700 shrink-0 mt-0.5" />
+                            ) : item.mode === 'pulpit-card' ? (
+                              <LayoutList className="w-3.5 h-3.5 text-slate-700 shrink-0 mt-0.5" />
+                            ) : item.mode === 'ebd' ? (
+                              <GraduationCap className="w-3.5 h-3.5 text-sky-700 shrink-0 mt-0.5" />
+                            ) : item.mode === 'catechetical' ? (
+                              <BookOpenCheck className="w-3.5 h-3.5 text-cyan-700 shrink-0 mt-0.5" />
+                            ) : item.mode === 'evangelistic' ? (
+                              <Megaphone className="w-3.5 h-3.5 text-orange-700 shrink-0 mt-0.5" />
+                            ) : item.mode === 'counseling' ? (
+                              <HeartHandshake className="w-3.5 h-3.5 text-teal-700 shrink-0 mt-0.5" />
+                            ) : (
+                              <Share2 className="w-3.5 h-3.5 text-purple-700 shrink-0 mt-0.5" />
+                            )}
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-[#2D2926] leading-tight">
+                                {item.label}
+                              </div>
+                              <div className="text-[10px] text-gray-500 leading-tight">
+                                {item.hint}
+                              </div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
                     )}
                   </div>
                 )}
@@ -434,8 +709,7 @@ export interface SermonLibraryModalProps {
   onToggleArchive: (id: string) => void;
   onDeleteSermon: (id: string) => void;
   onDeriveDuration?: (sermon: Sermon, duration: SermonDerivationDuration) => void;
-  onDeriveBibleStudy?: (sermon: Sermon) => void;
-  onOpenCustomizeDerive?: (sermon: Sermon) => void;
+  onDeriveMode?: (sermon: Sermon, mode: SermonDerivationMode) => void;
   onForceCloudSync?: () => void;
   isCloudSyncing?: boolean;
 }
@@ -456,8 +730,7 @@ export const SermonLibraryModal: React.FC<SermonLibraryModalProps> = ({
   onToggleArchive,
   onDeleteSermon,
   onDeriveDuration,
-  onDeriveBibleStudy,
-  onOpenCustomizeDerive,
+  onDeriveMode,
   onForceCloudSync,
   isCloudSyncing = false
 }) => {
@@ -472,11 +745,14 @@ export const SermonLibraryModal: React.FC<SermonLibraryModalProps> = ({
       .filter(s => {
         if (!searchQuery.trim()) return true;
         const q = searchQuery.toLowerCase();
+        const badge = getCardDerivationBadge(s);
         return (
           s.title.toLowerCase().includes(q) ||
           s.scripture.toLowerCase().includes(q) ||
           s.theme.toLowerCase().includes(q) ||
           (s.seriesName && s.seriesName.toLowerCase().includes(q)) ||
+          badge.label.toLowerCase().includes(q) ||
+          (badge.sourceTitle && badge.sourceTitle.toLowerCase().includes(q)) ||
           s.tags.some(t => t.toLowerCase().includes(q))
         );
       });
@@ -558,8 +834,7 @@ export const SermonLibraryModal: React.FC<SermonLibraryModalProps> = ({
                   }}
                   onCancelDelete={() => setDeletingId(null)}
                   onDeriveDuration={onDeriveDuration}
-                  onDeriveBibleStudy={onDeriveBibleStudy}
-                  onOpenCustomizeDerive={onOpenCustomizeDerive}
+                  onDeriveMode={onDeriveMode}
                 />
               ))}
             </div>

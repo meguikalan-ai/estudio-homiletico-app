@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Palette, Copy, Check, Feather, Trash2, 
-  Search, Monitor, Image as ImageIcon, Sparkles, X, Loader2, BookOpen
+  Search, Monitor, Image as ImageIcon, Sparkles, X, Loader2, BookOpen,
+  RefreshCw, AlertTriangle
 } from 'lucide-react';
 import { VisualIllustration } from '../types';
 import { 
@@ -103,6 +104,14 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
   // Modal & Generation states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+  const [lastRetryParams, setLastRetryParams] = useState<{
+    topic: string;
+    type: VisualIllustration['type'];
+    scripture?: string;
+    pastoralFocus: string;
+    replaceId: string;
+  } | null>(null);
   const [formData, setFormData] = useState<{
     topic: string;
     type: VisualIllustration['type'];
@@ -289,15 +298,16 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
     };
   };
 
-  // Submissão do modal de criação
-  const handleCreateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.topic.trim()) {
-      showToast('Por favor, informe o tema ou assunto da ilustração.');
-      return;
-    }
-
+  const executeCreateIllustration = async (params: {
+    topic: string;
+    type: VisualIllustration['type'];
+    scripture?: string;
+    pastoralFocus: string;
+    replaceId?: string;
+  }) => {
     setIsGenerating(true);
+    setFallbackNotice(null);
+    const targetId = params.replaceId || `ill_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
     try {
       const data = await safeApiPost<{
@@ -307,23 +317,24 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
       }>(
         '/api/gemini/generate-illustrations',
         {
-          topic: formData.topic.trim(),
-          type: formData.type,
-          scripture: formData.scripture.trim() || undefined,
-          pastoralFocus: formData.pastoralFocus
+          topic: params.topic,
+          type: params.type,
+          scripture: params.scripture || undefined,
+          pastoralFocus: params.pastoralFocus
         },
-        { retries: 1, timeoutMs: 85000 }
+        { retries: 1, timeoutMs: 165000 }
       );
 
       let createdIll: VisualIllustration | null = null;
+      let usedFallback = Boolean(data?.fallbackActive);
 
       if (data && Array.isArray(data.illustrations) && data.illustrations.length > 0) {
         const first = data.illustrations[0];
         createdIll = {
-          id: `ill_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          title: first.title || formData.topic.trim(),
-          type: (first.type || formData.type) as VisualIllustration['type'],
-          scripture: first.scripture || formData.scripture.trim() || undefined,
+          id: targetId,
+          title: first.title || params.topic,
+          type: (first.type || params.type) as VisualIllustration['type'],
+          scripture: first.scripture || params.scripture || undefined,
           story: first.story,
           moral: first.moral,
           visualPrompt: first.visualPrompt,
@@ -335,50 +346,98 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
       }
 
       if (!createdIll) {
-        createdIll = generateFallback({
-          topic: formData.topic.trim(),
-          type: formData.type,
-          scripture: formData.scripture.trim() || undefined,
-          pastoralFocus: formData.pastoralFocus
-        });
+        usedFallback = true;
+        createdIll = {
+          ...generateFallback({
+            topic: params.topic,
+            type: params.type,
+            scripture: params.scripture || undefined,
+            pastoralFocus: params.pastoralFocus
+          }),
+          id: targetId
+        };
       }
 
-      // Prepend to illustrations list
-      setIllustrations(prev => [createdIll!, ...prev]);
+      setIllustrations(prev => [createdIll!, ...prev.filter(item => item.id !== targetId)]);
 
       // Mirror to Firestore
       saveIllustrationToCloud(createdIll, FIXED_PASTORAL_UID).catch(err => {
         console.warn('[Firestore] Falha ao espelhar nova ilustração na nuvem:', err);
       });
 
-      showToast(
-        data?.fallbackActive
-          ? (data.fallbackReason || 'Ilustração gerada em modo de contingência e salva!')
-          : 'Nova ilustração criada e sincronizada em todos os dispositivos!'
-      );
-      setIsCreateModalOpen(false);
-      // Reset form fields
-      setFormData({
-        topic: '',
-        type: 'histórica',
-        scripture: '',
-        pastoralFocus: 'Fé e Confiança'
-      });
+      if (usedFallback) {
+        const reason =
+          data?.fallbackReason ||
+          'Ilustração gerada pelo acervo de contingência devido à indisponibilidade temporária da IA.';
+        setFallbackNotice(reason);
+        setLastRetryParams({
+          topic: params.topic,
+          type: params.type,
+          scripture: params.scripture,
+          pastoralFocus: params.pastoralFocus,
+          replaceId: targetId
+        });
+        showToast('Ilustração gerada em modo de contingência e salva!');
+      } else {
+        setFallbackNotice(null);
+        setLastRetryParams(null);
+        showToast('Nova ilustração criada e sincronizada em todos os dispositivos!');
+      }
+
+      if (!params.replaceId) {
+        setIsCreateModalOpen(false);
+        setFormData({
+          topic: '',
+          type: 'histórica',
+          scripture: '',
+          pastoralFocus: 'Fé e Confiança'
+        });
+      }
     } catch (err) {
       console.warn('Erro ao conectar com API de ilustrações, acionando contingência local:', err);
-      const fallbackIll = generateFallback({
-        topic: formData.topic.trim(),
-        type: formData.type,
-        scripture: formData.scripture.trim() || undefined,
-        pastoralFocus: formData.pastoralFocus
-      });
-      setIllustrations(prev => [fallbackIll, ...prev]);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const fallbackIll: VisualIllustration = {
+        ...generateFallback({
+          topic: params.topic,
+          type: params.type,
+          scripture: params.scripture || undefined,
+          pastoralFocus: params.pastoralFocus
+        }),
+        id: targetId
+      };
+      setIllustrations(prev => [fallbackIll, ...prev.filter(item => item.id !== targetId)]);
       saveIllustrationToCloud(fallbackIll).catch(() => {});
+      setFallbackNotice(`Falha ou tempo limite ao consultar a IA (${errMsg}). O acervo local de contingência gerou a ilustração.`);
+      setLastRetryParams({
+        topic: params.topic,
+        type: params.type,
+        scripture: params.scripture,
+        pastoralFocus: params.pastoralFocus,
+        replaceId: targetId
+      });
       showToast('Ilustração gerada com sucesso via contingência homilética!');
-      setIsCreateModalOpen(false);
+      if (!params.replaceId) {
+        setIsCreateModalOpen(false);
+      }
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  // Submissão do modal de criação
+  const handleCreateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.topic.trim()) {
+      showToast('Por favor, informe o tema ou assunto da ilustração.');
+      return;
+    }
+
+    await executeCreateIllustration({
+      topic: formData.topic.trim(),
+      type: formData.type,
+      scripture: formData.scripture.trim() || undefined,
+      pastoralFocus: formData.pastoralFocus
+    });
   };
 
   // Filtered list
@@ -616,6 +675,38 @@ export const IllustrationGenerator: React.FC<IllustrationGeneratorProps> = ({ on
             </div>
           </div>
         </div>
+
+        {fallbackNotice && (
+          <div className="p-4 bg-amber-500/10 rounded-xl border border-amber-500/20 text-amber-950 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-2 min-w-0">
+              <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5 sm:mt-0" />
+              <span className="break-words">{fallbackNotice}</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+              {lastRetryParams && (
+                <button
+                  type="button"
+                  disabled={isGenerating}
+                  onClick={() => void executeCreateIllustration(lastRetryParams)}
+                  className="inline-flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 disabled:opacity-60 text-white font-bold px-3 py-1.5 rounded-lg transition-colors text-[10px] uppercase tracking-wider cursor-pointer shadow-2xs"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isGenerating ? 'animate-spin' : ''}`} />
+                  <span>{isGenerating ? 'Tentando...' : 'Tentar novamente'}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setFallbackNotice(null);
+                  setLastRetryParams(null);
+                }}
+                className="text-amber-800 hover:text-amber-950 font-bold px-2.5 py-1.5 rounded-lg hover:bg-amber-500/10 border border-amber-500/15 transition-colors text-[10px] uppercase tracking-wider cursor-pointer"
+              >
+                ENTENDI
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Gallery Grid */}
         {filteredList.length === 0 ? (

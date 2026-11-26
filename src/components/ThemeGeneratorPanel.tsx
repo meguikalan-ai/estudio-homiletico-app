@@ -67,6 +67,7 @@ export const ThemeGeneratorPanel: React.FC<ThemeGeneratorPanelProps> = ({
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+  const [lastRetryWasVariation, setLastRetryWasVariation] = useState<boolean>(false);
   const [savingThemeId, setSavingThemeId] = useState<string | null>(null);
 
   const isCustomCategorySelected =
@@ -149,7 +150,8 @@ export const ThemeGeneratorPanel: React.FC<ThemeGeneratorPanelProps> = ({
 
       const data = await safeApiPost<GenerateThemesApiResponse>(
         '/api/gemini/generate-themes',
-        payload
+        payload,
+        { retries: 1, timeoutMs: 165000 }
       );
 
       if (data?.error) {
@@ -164,6 +166,7 @@ export const ThemeGeneratorPanel: React.FC<ThemeGeneratorPanelProps> = ({
       }
 
       if (data?.fallbackActive) {
+        setLastRetryWasVariation(isVariation);
         setFallbackNotice(
           data.fallbackReason ||
             'Sugestões geradas pelo modo local de contingência devido à indisponibilidade momentânea da API.'
@@ -174,6 +177,7 @@ export const ThemeGeneratorPanel: React.FC<ThemeGeneratorPanelProps> = ({
       if (!isExpanded) setIsExpanded(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Falha de comunicação ao gerar temas.';
+      setLastRetryWasVariation(isVariation);
       setGenerationError(msg);
     } finally {
       setIsGenerating(false);
@@ -450,9 +454,29 @@ export const ThemeGeneratorPanel: React.FC<ThemeGeneratorPanelProps> = ({
           )}
 
           {fallbackNotice && (
-            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-3.5 py-2.5 text-xs">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{fallbackNotice}</span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-3.5 py-2.5 text-xs">
+              <div className="flex items-start gap-2 min-w-0">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-700" />
+                <span className="break-words">{fallbackNotice}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                <button
+                  type="button"
+                  disabled={isGenerating}
+                  onClick={() => void handleGenerate(lastRetryWasVariation)}
+                  className="inline-flex items-center gap-1.5 bg-amber-800 hover:bg-amber-900 disabled:opacity-60 text-white font-bold px-2.5 py-1 rounded-md transition-colors text-[10px] uppercase tracking-wider cursor-pointer"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isGenerating ? 'animate-spin' : ''}`} />
+                  <span>{isGenerating ? 'Tentando...' : 'Tentar novamente'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFallbackNotice(null)}
+                  className="text-amber-800 hover:text-amber-950 font-bold px-2 py-1 rounded-md hover:bg-amber-500/10 border border-amber-500/20 transition-colors text-[10px] uppercase tracking-wider cursor-pointer"
+                >
+                  ENTENDI
+                </button>
+              </div>
             </div>
           )}
 

@@ -23,6 +23,7 @@
         "duration": { "type": "string" },
         "isFavorite": { "type": "boolean" },
         "isArchived": { "type": "boolean" },
+        "derivation": { "type": "object" },
         "updatedAt": { "type": "number" }
       },
       "required": ["id", "title", "scripture"]

@@ -31,7 +31,8 @@ import { Sermon, DetailedHymn } from '../types';
 import { hydrateHymnsIfLegacy } from '../hymnsData';
 import {
   formatRomanPointTitle,
-  structureExpositoryPoint
+  structureExpositoryPoint,
+  sanitizePulpitPortuguese
 } from '../utils/sermonPointFormatting';
 
 interface PulpitModeProps {
@@ -592,13 +593,13 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
 
             {/* Title */}
             <h1 className={`font-serif font-extrabold tracking-tight ${themeStyles.accentColor}`} style={{ fontSize: `${Math.round(fontSize * 1.5)}px`, lineHeight: 1.25 }}>
-              {sermon.title}
+              {sanitizePulpitPortuguese(sermon.title)}
             </h1>
 
             {/* Theme / Core Idea */}
             {sermon.theme && (
               <p className={`font-medium italic leading-relaxed ${themeStyles.textMuted}`} style={{ fontSize: `${Math.round(fontSize * 0.9)}px` }}>
-                « {sermon.theme} »
+                « {sanitizePulpitPortuguese(sermon.theme)} »
               </p>
             )}
 
@@ -615,7 +616,7 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
               </div>
 
               <div className="whitespace-pre-line leading-relaxed font-normal">
-                {sermon.introduction}
+                {sanitizePulpitPortuguese(sermon.introduction)}
               </div>
             </section>
           )}
@@ -628,7 +629,7 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
                 Pano de Fundo Exegético & Histórico
               </h3>
               <div className="whitespace-pre-line text-[0.9em] leading-relaxed text-gray-300">
-                {sermon.biblicalContext}
+                {sanitizePulpitPortuguese(sermon.biblicalContext)}
               </div>
             </section>
           )}
@@ -655,7 +656,7 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
                         Ponte
                       </span>
                       <p className="text-[0.85em] italic font-sans leading-relaxed text-gray-200">
-                        "{point.precedingTransition}"
+                        "{sanitizePulpitPortuguese(point.precedingTransition)}"
                       </p>
                     </div>
                   )}
@@ -678,7 +679,7 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
                             </span>
                           </div>
                           <p className={`text-[0.9em] leading-relaxed ${themeStyles.illustrationText} ${fontFamily === 'serif' ? 'font-serif' : 'font-sans'}`}>
-                            {point.illustration.description}
+                            {sanitizePulpitPortuguese(point.illustration.description)}
                           </p>
                         </div>
                       )}
@@ -724,7 +725,7 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
                             </span>
                           </div>
                           <p className={`text-[0.9em] leading-relaxed ${themeStyles.illustrationText} ${fontFamily === 'serif' ? 'font-serif' : 'font-sans'}`}>
-                            {point.illustration.description}
+                            {sanitizePulpitPortuguese(point.illustration.description)}
                           </p>
                         </div>
                       )}
@@ -765,7 +766,7 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
                   </h2>
                 </div>
                 <div className="whitespace-pre-line leading-relaxed">
-                  {sermon.conclusion}
+                  {sanitizePulpitPortuguese(sermon.conclusion)}
                 </div>
               </div>
             )}
@@ -780,7 +781,7 @@ export function PulpitMode({ sermon, onClose }: PulpitModeProps) {
                   </h3>
                 </div>
                 <div className="whitespace-pre-line leading-relaxed text-white font-medium">
-                  {sermon.pastoralAppeal}
+                  {sanitizePulpitPortuguese(sermon.pastoralAppeal)}
                 </div>
               </div>
             )}

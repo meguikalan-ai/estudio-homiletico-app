@@ -1,6 +1,10 @@
 import express from "express";
 import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import dotenv from "dotenv";
+import {
+  CLEAR_WRITING_STYLE_SECTION,
+  withWritingStyleSystemInstruction,
+} from "../src/prompts/writingStyleRule";
 
 dotenv.config();
 
@@ -312,6 +316,8 @@ Toda resposta deve vir estruturada obrigatoriamente no JSON correspondente:
 - Linguagem de um conselheiro teológico erudito, piedoso, inteligente, fidedigno e pastoralmente acolhedor.
 - Imune tanto ao liberalismo teológico quanto ao legalismo estéril.
 - Evite rigorosamente rebuscamentos artificiais de IA, prolixidade acadêmica desnecessária ou sentimentalismos fáceis. Mantenha a clareza bíblica, o calor pastoral e a sobriedade comunicativa.
+
+${CLEAR_WRITING_STYLE_SECTION}
 `;
 
 const BAPTIST_THEOLOGICAL_GUIDELINE = `
@@ -487,6 +493,8 @@ DIRETRIZ DE LINGUAGEM EM PORTUGUÊS PURO E ACESSÍVEL (MANDATÓRIO):
 - PROIBIÇÃO EXPRESSA DE ANGLICISMOS E ESTRANGEIRISMOS CORPORATIVOS OU POPULARES: É terminantemente proibido usar palavras e expressões em inglês como "sprint", "mindset", "insight", "feedback", "trigger", "reset", "burnout", "status", "check-in", "coaching", "performance", "stress", "deadline", "timing", "background", "briefing", "workshop", "networking", "marketing", "feeling", "target", "gap", "upgrade", "lifestyle", "mood", "vibe", "hype", "overthinking", "multitasking", "follow-up" e similares em qualquer parte do sermão (título, tema, introdução, contexto, exposição, ilustrações, aplicações, conclusão e apelo).
 - Substitua sempre esses termos por vocabulário vivo, natural e exato em português (ex.: "mentalidade" ou "modo de pensar", "discernimento" ou "percepção", "retorno", "gatilho", "recomeço", "esgotamento", "prestígio" ou "posição", "acompanhamento", "desempenho", "prazo", "momento oportuno").
 - EXCEÇÃO EXEGÉTICA LEGÍTIMA: Preserve exclusivamente os termos bíblicos originais transliterados do hebraico, aramaico e grego koiné (ex.: hesed, shalom, agape, metanoia, charis, hilasterion) quando explicados de forma pastoral e imediatamente traduzidos para o ouvinte.
+
+${CLEAR_WRITING_STYLE_SECTION}
 `;
 
 const ISALTINO_STYLE_GUIDELINE = `
@@ -920,7 +928,7 @@ Certifique-se de que o plano seja extremamente fiel às escrituras, fluido para 
 
     const data = await generateJSON({
       contents: prompt,
-      systemInstruction: sInstruction,
+      systemInstruction: withWritingStyleSystemInstruction(sInstruction),
       temperature: 0.9,
       timeoutMs: isLongGeneration ? 85000 : 70000,
       fallbackTimeoutMs: isLongGeneration ? 90000 : 75000,
@@ -1008,7 +1016,7 @@ Retorne um JSON contendo a avaliação no formato:
 
     const data = await generateJSON({
       contents: prompt,
-      systemInstruction: sInstruction,
+      systemInstruction: withWritingStyleSystemInstruction(sInstruction),
       timeoutMs: 70000,
       fallbackTimeoutMs: 75000
     });
@@ -1070,7 +1078,9 @@ Retorne no formato JSON exato:
   try {
     const data = await generateJSON({
       contents: prompt,
-      systemInstruction: "Você é o Pr. Fernando Veiga. Seu foco é pregação bíblica expositiva de alta qualidade, estruturando séries integradas com divisões exegéticas inteligentes, títulos pregáveis e português puro e acessível.",
+      systemInstruction: withWritingStyleSystemInstruction(
+        "Você é o Pr. Fernando Veiga. Seu foco é pregação bíblica expositiva de alta qualidade, estruturando séries integradas com divisões exegéticas inteligentes, títulos pregáveis e português puro e acessível."
+      ),
       timeoutMs: 70000,
       fallbackTimeoutMs: 75000
     });
@@ -1333,6 +1343,9 @@ Você deve retornar estritamente os dados formatados conforme o esquema de respo
   try {
     const data = await generateJSON({
       contents: prompt,
+      systemInstruction: withWritingStyleSystemInstruction(
+        "Você é o Explorador de Possibilidades da Perícope do Estúdio de Sermões. Identifique apenas temas legitimamente sustentados pelo texto bíblico, com rigor exegético, sobriedade pastoral e linguagem clara."
+      ),
       responseSchema: pericopeSchema,
       timeoutMs: 70000,
       fallbackTimeoutMs: 75000
@@ -1448,7 +1461,9 @@ Retorne rigorosamente em formato JSON válido:
   try {
     const data = await generateJSON({
       contents: prompt,
-      systemInstruction: "Você é o Consultor Teológico e Hermenêutico Sênior do Estúdio Homilético Batista. Avalie a mensagem com fidelidade bíblica intransigente, 1689, sobriedade pastoral e português puro e acessível.",
+      systemInstruction: withWritingStyleSystemInstruction(
+        "Você é o Consultor Teológico e Hermenêutico Sênior do Estúdio Homilético Batista. Avalie a mensagem com fidelidade bíblica intransigente, 1689, sobriedade pastoral e português puro e acessível."
+      ),
       timeoutMs: 75000,
       fallbackTimeoutMs: 80000
     });
@@ -2016,6 +2031,13 @@ Retorne estritamente o JSON estruturado do publishSchema.
       const isHeavyStage = stage === 2 || stage === 5 || stage === 6;
       const generated = await generateJSON({
         contents: prompt,
+        ...(stage >= 2
+          ? {
+              systemInstruction: withWritingStyleSystemInstruction(
+                "Você é o especialista homilético do Estúdio de Sermões, produzindo transcrições, mapas, análises, manuscritos e materiais pastorais fiéis às Escrituras em português claro e direto."
+              ),
+            }
+          : {}),
         responseSchema: activeSchema,
         timeoutMs: isHeavyStage ? 75000 : 70000,
         fallbackTimeoutMs: isHeavyStage ? 80000 : 75000
@@ -2108,6 +2130,9 @@ Gere entre 2 e 3 ilustrações completas, profundas e ricas.
   try {
     const data = await generateJSON({
       contents: prompt,
+      systemInstruction: withWritingStyleSystemInstruction(
+        "Você é um Homilético de Púlpito Sênior especialista em narrativas reais, históricas, bíblicas e do cotidiano para argumentação pastoral."
+      ),
       timeoutMs: 70000,
       fallbackTimeoutMs: 75000
     });
@@ -2211,7 +2236,7 @@ Retorne obrigatoriamente um objeto JSON com os mesmos campos do sermão, contend
 
     const data = await generateJSON({
       contents: prompt,
-      systemInstruction: sInstruction,
+      systemInstruction: withWritingStyleSystemInstruction(sInstruction),
       timeoutMs: 70000,
       fallbackTimeoutMs: 75000
     });
@@ -2450,8 +2475,9 @@ ${PURE_PORTUGUESE_PULPIT_GUIDELINE}`;
   try {
     const data = await generateJSON({
       contents: prompt,
-      systemInstruction:
-        "Você é um pastor e professor de homilética bíblica sóbrio, experiente e fiel às Escrituras. Produza temas de sermão claros, teologicamente consistentes, humanos, aplicáveis à igreja local e redigidos em português puro e acessível (sem anglicismos).",
+      systemInstruction: withWritingStyleSystemInstruction(
+        "Você é um pastor e professor de homilética bíblica sóbrio, experiente e fiel às Escrituras. Produza temas de sermão claros, teologicamente consistentes, humanos, aplicáveis à igreja local e redigidos em português puro e acessível (sem anglicismos)."
+      ),
       timeoutMs: 70000,
       fallbackTimeoutMs: 75000,
       responseSchema: {
@@ -2596,7 +2622,9 @@ Retorne em formato JSON válido:
   try {
     const data = await generateJSON({
       contents: prompt,
-      systemInstruction: "Você é um especialista em pedagogia infantil e juvenil brasileira, criando atividades ricas sob medida no padrão sugerido em JSON.",
+      systemInstruction: withWritingStyleSystemInstruction(
+        "Você é um especialista em pedagogia infantil e juvenil brasileira, criando atividades ricas sob medida no padrão sugerido em JSON."
+      ),
       timeoutMs: 70000,
       fallbackTimeoutMs: 75000
     });
@@ -2652,7 +2680,9 @@ Retorne um JSON contendo a seguinte estrutura de síntese e análise para planej
   try {
     const data = await generateJSON({
       contents: prompt,
-      systemInstruction: "Você é um assistente pedagógico especializado em processamento e estruturação de materiais didáticos a partir de arquivos e textos importados.",
+      systemInstruction: withWritingStyleSystemInstruction(
+        "Você é um assistente pedagógico especializado em processamento e estruturação de materiais didáticos a partir de arquivos e textos importados."
+      ),
       timeoutMs: 70000,
       fallbackTimeoutMs: 75000
     });

@@ -33,13 +33,15 @@ import {
   IllustrationSuggestion, SermonHistoryEntry, PericopeAnalysis, PericopePossibility,
   VisualIllustration, HinarioType, DetailedHymn, GeneratedHomileticTheme,
   SermonDerivationConfig, SermonDerivationContext, SermonDerivationDraftMeta,
-  SermonDerivationDuration, SermonDerivationMode, ExpositoryPoint
+  SermonDerivationDuration, SermonDerivationMode, ExpositoryPoint,
+  PreachingPlan
 } from './types';
 import { TheologicalChat } from './components/TheologicalChat';
 import { SermonLibraryCard, getCardDerivationBadge } from './components/SermonLibraryModal';
 import { DerivedSermonPopup } from './components/DerivedSermonPopup';
 import { ThemeGeneratorPanel } from './components/ThemeGeneratorPanel';
 import { SermonHymnsSection } from './components/SermonHymnsSection';
+import { PreachingPlanner } from './components/PreachingPlanner';
 import { BIBLICAL_THEMES_BANK, CHRISTIAN_THEMATIC_CALENDAR, MOCK_STARTER_SERMONS } from './data/pastoralBank';
 import { normalizeCategoryKey, normalizeThemeCategory } from './utils/themeCategory';
 import {
@@ -86,7 +88,16 @@ import {
   saveGeneratedThemeToCloud,
   deleteGeneratedThemeFromCloud,
   syncAllLocalThemesToCloud,
-  subscribeToSavedThemes
+  subscribeToSavedThemes,
+  LOCAL_STORAGE_PREACHING_PLANS_KEY,
+  getDeletedPreachingPlanIds,
+  savePreachingPlanToCloud,
+  deletePreachingPlanFromCloud,
+  syncAllLocalPreachingPlansToCloud,
+  subscribeToPreachingPlans,
+  smartMergePreachingPlans,
+  arePreachingPlanListsEqual,
+  testPreachingPlanConnection
 } from './services/sermonStorage';
 import { 
   createSyncCode, 
@@ -149,6 +160,7 @@ export default function App() {
     let unsubscribeSermons: (() => void) | null = null;
     let unsubscribeSeries: (() => void) | null = null;
     let unsubscribeThemes: (() => void) | null = null;
+    let unsubscribePlans: (() => void) | null = null;
 
     // Observar logs internos de sincronização
     const unsubLogs = subscribeToSyncLogs((logs) => {
@@ -230,9 +242,27 @@ export default function App() {
       }
     );
 
+    unsubscribePlans = subscribeToPreachingPlans(
+      FIXED_PASTORAL_UID,
+      (cloudPlans, deletedPlanIds) => {
+        if (!isMounted) return;
+        setPreachingPlans((prevLocal) => {
+          const merged = smartMergePreachingPlans(prevLocal, cloudPlans, deletedPlanIds);
+          if (arePreachingPlanListsEqual(prevLocal, merged)) {
+            return prevLocal;
+          }
+          try {
+            localStorage.setItem(LOCAL_STORAGE_PREACHING_PLANS_KEY, JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+      }
+    );
+
     // Em segundo plano e sem bloquear a interface, executa a mesclagem inicial e telemetria real
     (async () => {
       try {
+        void testPreachingPlanConnection();
         const initialSync = await performInitialSermonSmartSync(sermons, FIXED_PASTORAL_UID);
         if (isMounted && initialSync.hasRemoteChanges) {
           recordRemoteSyncedTimestamps(initialSync.mergedSermons);
@@ -240,6 +270,17 @@ export default function App() {
           setSermons(initialSync.mergedSermons);
         }
         await syncAllLocalThemesToCloud(savedThemes, FIXED_PASTORAL_UID);
+        const planSync = await syncAllLocalPreachingPlansToCloud(preachingPlans, FIXED_PASTORAL_UID);
+        if (isMounted && planSync.cloudPlans.length > 0) {
+          setPreachingPlans((prevLocal) => {
+            const merged = smartMergePreachingPlans(prevLocal, planSync.cloudPlans);
+            if (arePreachingPlanListsEqual(prevLocal, merged)) return prevLocal;
+            try {
+              localStorage.setItem(LOCAL_STORAGE_PREACHING_PLANS_KEY, JSON.stringify(merged));
+            } catch {}
+            return merged;
+          });
+        }
         const realProbe = await testFirestoreConnection(FIXED_PASTORAL_UID);
         if (isMounted) {
           setFirestoreProbe({
@@ -286,6 +327,9 @@ export default function App() {
       if (unsubscribeThemes) {
         try { unsubscribeThemes(); } catch {}
       }
+      if (unsubscribePlans) {
+        try { unsubscribePlans(); } catch {}
+      }
     };
   }, []);
 
@@ -328,13 +372,35 @@ export default function App() {
         });
       }
 
-      // 4. Busca séries expositivas e sincroniza temas gerados salvos em segundo plano sem bloquear
+      // 4. Busca séries expositivas e sincroniza temas gerados e planejamentos em segundo plano sem bloquear
       fetchUserSeriesFromCloud(FIXED_PASTORAL_UID).then(cloudSeries => {
         if (cloudSeries.length > 0 && !generatedSeries) {
           setGeneratedSeries(cloudSeries[0]);
         }
       }).catch(console.warn);
       syncAllLocalThemesToCloud(savedThemes, FIXED_PASTORAL_UID).catch(console.warn);
+      let localPlansList: PreachingPlan[] = preachingPlans;
+      try {
+        const savedPlansRaw = localStorage.getItem(LOCAL_STORAGE_PREACHING_PLANS_KEY);
+        if (savedPlansRaw) {
+          const parsedPlans = JSON.parse(savedPlansRaw);
+          if (Array.isArray(parsedPlans)) {
+            localPlansList = parsedPlans;
+          }
+        }
+      } catch {}
+      syncAllLocalPreachingPlansToCloud(localPlansList, FIXED_PASTORAL_UID)
+        .then(planSync => {
+          setPreachingPlans((prevLocal) => {
+            const merged = smartMergePreachingPlans(prevLocal, planSync.cloudPlans);
+            if (arePreachingPlanListsEqual(prevLocal, merged)) return prevLocal;
+            try {
+              localStorage.setItem(LOCAL_STORAGE_PREACHING_PLANS_KEY, JSON.stringify(merged));
+            } catch {}
+            return merged;
+          });
+        })
+        .catch(console.warn);
 
       // 5. Atualiza probe de telemetria sem fazer nova requisição redundante
       setFirestoreProbe({
@@ -415,11 +481,11 @@ export default function App() {
 
   const handleGenerateDeviceSyncCode = () => {
     const illList = getLocalIllustrations();
-    const code = createSyncCode(sermons, illList);
+    const code = createSyncCode(sermons, illList, preachingPlans);
     setSyncCodeGenerated(code);
     setSyncActionMessage({
       type: 'success',
-      text: `Código gerado com sucesso! Contém ${sermons.filter(s => !isSermonBlank(s)).length} sermões e ${illList.length} ilustrações.`
+      text: `Código gerado com sucesso! Contém ${sermons.filter(s => !isSermonBlank(s)).length} sermões, ${illList.length} ilustrações e ${preachingPlans.length} planejamentos.`
     });
   };
 
@@ -442,13 +508,15 @@ export default function App() {
     try {
       const pkg = parseSyncCode(syncCodeToImport);
       const currentIlls = getLocalIllustrations();
-      const result = mergeSyncPackage(pkg, sermons, currentIlls);
+      const result = mergeSyncPackage(pkg, sermons, currentIlls, preachingPlans);
 
       isRemoteSyncUpdateRef.current = true;
       setSermons(result.mergedSermons);
+      setPreachingPlans(result.mergedPlans);
       try {
         localStorage.setItem('pastoral_sermons', JSON.stringify(result.mergedSermons));
         localStorage.setItem('pastoral_visual_illustrations', JSON.stringify(result.mergedIllustrations));
+        localStorage.setItem(LOCAL_STORAGE_PREACHING_PLANS_KEY, JSON.stringify(result.mergedPlans));
       } catch (e) {
         console.warn('Erro ao persistir no localStorage:', e);
       }
@@ -456,13 +524,14 @@ export default function App() {
       // Background push to Firestore if online
       syncAllLocalSermonsToCloud(result.mergedSermons).catch(console.warn);
       syncAllLocalIllustrationsToCloud(result.mergedIllustrations).catch(console.warn);
+      syncAllLocalPreachingPlansToCloud(result.mergedPlans, FIXED_PASTORAL_UID).catch(console.warn);
 
       setSyncCodeToImport('');
       setSyncActionMessage({
         type: 'success',
-        text: `Sincronização concluída com sucesso! ${result.sermonsAddedCount} novo(s) sermão(ões) e ${result.illustrationsAddedCount} nova(s) ilustração(ões) mesclados.`
+        text: `Sincronização concluída com sucesso! ${result.sermonsAddedCount} novo(s) sermão(ões), ${result.illustrationsAddedCount} ilustração(ões) e ${result.plansAddedCount} planejamento(s) mesclados.`
       });
-      const noticeText = `Sincronização concluída: ${result.sermonsAddedCount} sermões e ${result.illustrationsAddedCount} ilustrações integrados!`;
+      const noticeText = `Sincronização concluída: ${result.sermonsAddedCount} sermões e ${result.plansAddedCount} planejamentos integrados!`;
       setToastNotice(noticeText);
       setTimeout(() => setToastNotice(prev => prev === noticeText ? null : prev), 4500);
     } catch (err: unknown) {
@@ -477,7 +546,7 @@ export default function App() {
   const handleExportBackupFile = () => {
     try {
       const illList = getLocalIllustrations();
-      exportBackupJSON(sermons, illList);
+      exportBackupJSON(sermons, illList, preachingPlans);
       setSyncActionMessage({
         type: 'success',
         text: 'Arquivo de backup (.json) gerado e baixado com sucesso!'
@@ -497,25 +566,28 @@ export default function App() {
     try {
       const pkg = await parseBackupFile(file);
       const currentIlls = getLocalIllustrations();
-      const result = mergeSyncPackage(pkg, sermons, currentIlls);
+      const result = mergeSyncPackage(pkg, sermons, currentIlls, preachingPlans);
 
       isRemoteSyncUpdateRef.current = true;
       setSermons(result.mergedSermons);
+      setPreachingPlans(result.mergedPlans);
       try {
         localStorage.setItem('pastoral_sermons', JSON.stringify(result.mergedSermons));
         localStorage.setItem('pastoral_visual_illustrations', JSON.stringify(result.mergedIllustrations));
+        localStorage.setItem(LOCAL_STORAGE_PREACHING_PLANS_KEY, JSON.stringify(result.mergedPlans));
       } catch (err) {
         console.warn('Erro ao salvar no localStorage:', err);
       }
 
       syncAllLocalSermonsToCloud(result.mergedSermons).catch(console.warn);
       syncAllLocalIllustrationsToCloud(result.mergedIllustrations).catch(console.warn);
+      syncAllLocalPreachingPlansToCloud(result.mergedPlans, FIXED_PASTORAL_UID).catch(console.warn);
 
       setSyncActionMessage({
         type: 'success',
-        text: `Backup restaurado com sucesso! ${result.sermonsAddedCount} sermão(ões) e ${result.illustrationsAddedCount} ilustração(ões) integrados.`
+        text: `Backup restaurado com sucesso! ${result.sermonsAddedCount} sermão(ões), ${result.illustrationsAddedCount} ilustração(ões) e ${result.plansAddedCount} planejamento(s) integrados.`
       });
-      const noticeText = `Backup restaurado: ${result.sermonsAddedCount} novos sermões integrados!`;
+      const noticeText = `Backup restaurado: ${result.sermonsAddedCount} sermões e ${result.plansAddedCount} planejamentos integrados!`;
       setToastNotice(noticeText);
       setTimeout(() => setToastNotice(prev => prev === noticeText ? null : prev), 4500);
     } catch (err: unknown) {
@@ -530,7 +602,7 @@ export default function App() {
   };
 
   // Navigation & Tab state - Abre diretamente na Biblioteca
-  const [activeTab, setActiveTab] = useState<'workspace' | 'crivo' | 'study' | 'ideas' | 'illustrations' | 'series' | 'library'>('library');
+  const [activeTab, setActiveTab] = useState<'workspace' | 'crivo' | 'study' | 'ideas' | 'illustrations' | 'series' | 'library' | 'planning'>('library');
 
   // Library State
   const [sermons, setSermons] = useState<Sermon[]>(() => {
@@ -593,6 +665,26 @@ export default function App() {
       localStorage.setItem(LOCAL_STORAGE_SAVED_THEMES_KEY, JSON.stringify(savedThemes));
     } catch {}
   }, [savedThemes]);
+
+  // Planejamento de Pregações
+  const [preachingPlans, setPreachingPlans] = useState<PreachingPlan[]>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_PREACHING_PLANS_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      const deleted = getDeletedPreachingPlanIds();
+      return parsed.filter((p: PreachingPlan) => p && p.id && p.date && !deleted.has(p.id));
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_PREACHING_PLANS_KEY, JSON.stringify(preachingPlans));
+    } catch {}
+  }, [preachingPlans]);
   
   // Create / Generator inputs
   const [titleInput, setTitleInput] = useState('');
@@ -677,6 +769,14 @@ export default function App() {
   const [showPericopeExplorerModal, setShowPericopeExplorerModal] = useState(false);
   const [showPulpitMode, setShowPulpitMode] = useState(false);
   const [pulpitTargetSermon, setPulpitTargetSermon] = useState<Sermon | null>(null);
+
+  const openPulpitMode = (target: Sermon) => {
+    setPulpitTargetSermon(target);
+    setShowPulpitMode(true);
+    if (typeof document !== 'undefined' && !document.fullscreenElement && document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+  };
   
   // Study/Exegesis states
   const [exegesisScripture, setExegesisScripture] = useState('Romanos 5:1-5');
@@ -1022,7 +1122,7 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [sermons]);
 
-  // Auto-reconcile and Smart Merge when opening the Library tab or switching tabs
+  // Auto-reconcile and Smart Merge when opening the Library or Planning tab
   useEffect(() => {
     if ((activeTab === 'library' || activeTab === 'study') && navigator.onLine) {
       performInitialSermonSmartSync(sermons, FIXED_PASTORAL_UID).then(res => {
@@ -1034,7 +1134,66 @@ export default function App() {
         console.warn('[Library Auto-Sync] Sincronização offline ou indisponível:', err);
       });
     }
+    if (activeTab === 'planning' && navigator.onLine) {
+      syncAllLocalPreachingPlansToCloud(preachingPlans, FIXED_PASTORAL_UID).then(res => {
+        if (res.cloudPlans.length > 0) {
+          setPreachingPlans((prevLocal) => {
+            const merged = smartMergePreachingPlans(prevLocal, res.cloudPlans);
+            if (arePreachingPlanListsEqual(prevLocal, merged)) return prevLocal;
+            try {
+              localStorage.setItem(LOCAL_STORAGE_PREACHING_PLANS_KEY, JSON.stringify(merged));
+            } catch {}
+            return merged;
+          });
+        }
+      }).catch(err => {
+        console.warn('[Planning Auto-Sync] Sincronização offline ou indisponível:', err);
+      });
+    }
   }, [activeTab]);
+
+  const handleSavePreachingPlan = (plan: PreachingPlan) => {
+    setPreachingPlans((prev) => {
+      const exists = prev.some(p => p.id === plan.id);
+      const updated = exists ? prev.map(p => (p.id === plan.id ? plan : p)) : [...prev, plan];
+      updated.sort((a, b) => a.date.localeCompare(b.date) || (a.createdAt || 0) - (b.createdAt || 0));
+      try {
+        localStorage.setItem(LOCAL_STORAGE_PREACHING_PLANS_KEY, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+    void savePreachingPlanToCloud(plan, FIXED_PASTORAL_UID);
+  };
+
+  const handleDeletePreachingPlan = (planId: string) => {
+    setPreachingPlans((prev) => {
+      const updated = prev.filter(p => p.id !== planId);
+      try {
+        localStorage.setItem(LOCAL_STORAGE_PREACHING_PLANS_KEY, JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+    void deletePreachingPlanFromCloud(planId, FIXED_PASTORAL_UID);
+  };
+
+  const handleOpenLinkedSermonFromPlan = (sermonId: string) => {
+    const target = sermons.find(s => s.id === sermonId && !isSermonBlank(s) && !isModelSermon(s));
+    if (!target) {
+      const msg = 'O sermão vinculado não foi encontrado na Biblioteca. Ele pode ter sido removido.';
+      setToastNotice(msg);
+      setTimeout(() => setToastNotice(prev => (prev === msg ? null : prev)), 4000);
+      return;
+    }
+    setSelectedSermonId(target.id);
+    setActiveTab('workspace');
+    setTimeout(() => {
+      if (laboratoryTopRef.current) {
+        laboratoryTopRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }, 80);
+  };
 
   const handleSaveHistoryEntry = (dateVal: string, locationVal: string, eventVal: string, notesVal: string, editId: string | null) => {
     if (!activeSermon) return;
@@ -3078,6 +3237,13 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
               <Bookmark className="w-4.5 h-4.5 shrink-0" />
               <span className="text-left">Biblioteca de Sermões ({sermons.filter(s => !isSermonBlank(s)).length || 11})</span>
             </button>
+            <button 
+              onClick={() => { setActiveTab('planning'); }}
+              className={`flex items-center text-left gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'planning' ? 'bg-[#5A5A40] text-white shadow-sm' : 'text-gray-300 hover:bg-[#5A5A40]/20 hover:text-white'}`}
+            >
+              <Calendar className="w-4.5 h-4.5 shrink-0" />
+              <span className="text-left">Planejamento{preachingPlans.length > 0 ? ` (${preachingPlans.length})` : ''}</span>
+            </button>
           </nav>
         </aside>
 
@@ -3224,14 +3390,13 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
                   <button 
                     onClick={() => {
                       if (activeSermon && !isSermonBlank(activeSermon)) {
-                        setPulpitTargetSermon(activeSermon);
-                        setShowPulpitMode(true);
+                        openPulpitMode(activeSermon);
                       } else {
                         alert("Consolide ou selecione um sermão antes de entrar no Modo Púlpito.");
                       }
                     }} 
                     className="bg-[#D4AF37] hover:bg-[#b89528] text-black px-4 py-2 rounded-lg text-xs font-extrabold tracking-wide transition-all shadow-md flex items-center gap-2 cursor-pointer"
-                    title="Abrir no Modo Púlpito (Tela Sempre Ativa, Cronômetro e OLED)"
+                    title="Abrir em tela cheia no Modo Púlpito"
                   >
                     <BookOpen className="w-4 h-4 text-black" />
                     <span>Modo Púlpito</span>
@@ -3735,14 +3900,13 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
                         <div className="flex flex-wrap items-center gap-2">
                           <button
                             onClick={() => {
-                              setPulpitTargetSermon(activeSermon);
-                              setShowPulpitMode(true);
+                              openPulpitMode(activeSermon);
                             }}
                             className="bg-[#2D2926] hover:bg-[#5A5A40] text-amber-300 hover:text-white px-3 py-1.5 rounded text-[11px] font-bold tracking-wide transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-                            title="Entrar no Modo Púlpito (OLED, Cronômetro, Wake Lock)"
+                            title="Abrir em tela cheia no Modo Púlpito"
                           >
                             <BookOpen className="w-3.5 h-3.5 text-amber-400" />
-                            <span>📖 Entrar no Modo Púlpito</span>
+                            <span>Modo Púlpito</span>
                           </button>
                           <button
                             onClick={() => handleEvaluateSermon()}
@@ -5472,8 +5636,7 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
                         setActiveTab('workspace');
                       }}
                       onOpenPulpit={(sermon) => {
-                        setPulpitTargetSermon(sermon);
-                        setShowPulpitMode(true);
+                        openPulpitMode(sermon);
                       }}
                       onDuplicate={(sermon) => duplicateSermon(sermon)}
                       onToggleFavorite={(id) => toggleFavoriteSermon(id)}
@@ -5493,6 +5656,18 @@ ${mdHymns.details?.encerramento?.fullLyrics || ''}
               </div>
 
             </div>
+          )}
+
+          {/* Tab 6: Planejamento de Pregações */}
+          {activeTab === 'planning' && (
+            <PreachingPlanner
+              plans={preachingPlans}
+              sermons={sermons.filter(s => !isSermonBlank(s) && !isModelSermon(s))}
+              availableSeriesNames={generatedSeries?.title ? [generatedSeries.title] : []}
+              onSavePlan={handleSavePreachingPlan}
+              onDeletePlan={handleDeletePreachingPlan}
+              onOpenLinkedSermon={handleOpenLinkedSermonFromPlan}
+            />
           )}
 
         </main>
@@ -6778,8 +6953,7 @@ service cloud.firestore {
         onUpdateSermon={(updated) => setDerivedDraftSermon(updated)}
         onSaveToLibrary={handleSaveDerivedDraftToLibrary}
         onOpenPulpit={(targetSermon) => {
-          setPulpitTargetSermon(targetSermon);
-          setShowPulpitMode(true);
+          openPulpitMode(targetSermon);
         }}
         onDiscard={handleDiscardDerivedDraft}
         onClose={() => setIsDerivedPopupOpen(false)}

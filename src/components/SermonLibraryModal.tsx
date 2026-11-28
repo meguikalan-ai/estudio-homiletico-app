@@ -507,10 +507,11 @@ export const SermonLibraryCard: React.FC<SermonCardProps> = ({
                 e.stopPropagation();
                 onOpenPulpit(s);
               }}
-              className="text-amber-800 hover:text-amber-950 font-bold flex items-center gap-1 cursor-pointer bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded border border-amber-200 text-xs transition-colors shadow-2xs"
+              className="text-amber-900 hover:text-amber-950 font-bold flex items-center gap-1 cursor-pointer bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded border border-amber-200 text-xs transition-colors shadow-2xs"
               title="Abrir diretamente no Modo Púlpito"
             >
-              <span>📖 Púlpito</span>
+              <BookOpen className="w-3.5 h-3.5 text-amber-700" />
+              <span>Modo Púlpito</span>
             </button>
 
             {hasDeriveActions && (

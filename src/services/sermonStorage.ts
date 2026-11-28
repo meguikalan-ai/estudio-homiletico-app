@@ -20,7 +20,8 @@ import {
   type DocumentData,
   type QuerySnapshot
 } from '../firebase';
-import { Sermon, ExpositorySeries, VisualIllustration, TheologicalChatMessage, TheologicalChatTopic, TheologicalSieveResult, GeneratedHomileticTheme, ThemeApproach, ThemeGenerationMode } from '../types';
+import { Sermon, ExpositorySeries, VisualIllustration, TheologicalChatMessage, TheologicalChatTopic, TheologicalSieveResult, GeneratedHomileticTheme, ThemeApproach, ThemeGenerationMode, PreachingPlan, PreachingPlanStatus } from '../types';
+import { PREACHING_SERVICE_TYPES, PREACHING_PLAN_STATUSES } from '../config/preachingPlanningConfig';
 import { normalizeThemeCategory } from '../utils/themeCategory';
 
 export const PASTORAL_SERMONS_COLLECTION = 'pastoral_sermons';
@@ -32,6 +33,7 @@ export const THEOLOGICAL_TOPICS_COLLECTION = 'theological_topics';
 export const THEOLOGICAL_CHAT_COLLECTION = 'theological_chat';
 export const THEOLOGICAL_SIEVE_COLLECTION = 'theological_sieve';
 export const BIBLICAL_THEMES_COLLECTION = 'biblical_themes';
+export const PREACHING_PLANS_COLLECTION = 'preaching_plans';
 export const CHAT_META_COLLECTION = 'chat_meta';
 export const LOCAL_STORAGE_KEY = 'pastoral_sermons';
 export const LOCAL_STORAGE_DELETED_KEY = 'pastoral_deleted_sermon_ids';
@@ -44,6 +46,8 @@ export const LOCAL_STORAGE_SIEVE_KEY = 'theological_sieve_history';
 export const LOCAL_STORAGE_DELETED_SIEVE_KEY = 'pastoral_deleted_sieve_ids';
 export const LOCAL_STORAGE_SAVED_THEMES_KEY = 'pastoral_saved_biblical_themes';
 export const LOCAL_STORAGE_DELETED_THEMES_KEY = 'pastoral_deleted_theme_ids';
+export const LOCAL_STORAGE_PREACHING_PLANS_KEY = 'pastoral_preaching_plans';
+export const LOCAL_STORAGE_DELETED_PLANS_KEY = 'pastoral_deleted_preaching_plan_ids';
 export const LEGACY_CHAT_TOPIC_ID = 'topic-geral';
 
 // Rastreamento do último erro do Firestore para diagnósticos na UI
@@ -773,7 +777,22 @@ export async function syncTombstonesFromCloud(userId?: string): Promise<Set<stri
   try {
     const snapshot = await getDocs(collection(db, 'users', uid, TOMBSTONES_COLLECTION));
     snapshot.forEach((docSnap) => {
-      localDeleted.add(docSnap.id);
+      const data = docSnap.data() as { id?: string; entityType?: string };
+      if (
+        docSnap.id.startsWith('ill_') ||
+        docSnap.id.startsWith('sieve_') ||
+        docSnap.id.startsWith('topic_') ||
+        docSnap.id.startsWith('theme_') ||
+        docSnap.id.startsWith('plan_') ||
+        data?.entityType === 'illustration' ||
+        data?.entityType === 'sieve' ||
+        data?.entityType === 'theological_topic' ||
+        data?.entityType === 'biblical_theme' ||
+        data?.entityType === 'preaching_plan'
+      ) {
+        return;
+      }
+      localDeleted.add(data?.id || docSnap.id);
     });
     localStorage.setItem(LOCAL_STORAGE_DELETED_KEY, JSON.stringify(Array.from(localDeleted)));
     setLastFirestoreError(null);
@@ -872,7 +891,7 @@ export function subscribeToUserSermons(
     const legacySermonsMap = new Map<string, Sermon>();
 
     const isTombstoned = (id: string, sermon?: Sermon): boolean => {
-      if (id.startsWith('ill_') || id.startsWith('sieve_') || id.startsWith('topic_') || id.startsWith('theme_')) return true;
+      if (id.startsWith('ill_') || id.startsWith('sieve_') || id.startsWith('topic_') || id.startsWith('theme_') || id.startsWith('plan_')) return true;
       const deletedAt = cloudTombstones.get(id);
       if (deletedAt === undefined) return false;
       if (!sermon) return true;
@@ -951,10 +970,12 @@ export function subscribeToUserSermons(
             docSnap.id.startsWith('sieve_') ||
             docSnap.id.startsWith('topic_') ||
             docSnap.id.startsWith('theme_') ||
+            docSnap.id.startsWith('plan_') ||
             data?.entityType === 'illustration' ||
             data?.entityType === 'sieve' ||
             data?.entityType === 'topic' ||
-            data?.entityType === 'theme'
+            data?.entityType === 'theme' ||
+            data?.entityType === 'preaching_plan'
           ) {
             return;
           }
@@ -1258,7 +1279,18 @@ export async function syncAllLocalSermonsToCloud(
     if (tombstonesSnap.status === 'fulfilled' && tombstonesSnap.value) {
       tombstonesSnap.value.forEach(docSnap => {
         const data = docSnap.data() as { id?: string; deletedAt?: number; entityType?: string };
-        if (docSnap.id.startsWith('ill_') || docSnap.id.startsWith('sieve_') || data?.entityType === 'illustration' || data?.entityType === 'sieve') {
+        if (
+          docSnap.id.startsWith('ill_') ||
+          docSnap.id.startsWith('sieve_') ||
+          docSnap.id.startsWith('topic_') ||
+          docSnap.id.startsWith('theme_') ||
+          docSnap.id.startsWith('plan_') ||
+          data?.entityType === 'illustration' ||
+          data?.entityType === 'sieve' ||
+          data?.entityType === 'theological_topic' ||
+          data?.entityType === 'biblical_theme' ||
+          data?.entityType === 'preaching_plan'
+        ) {
           return;
         }
         const targetId = data?.id || docSnap.id;
@@ -2477,4 +2509,366 @@ export function subscribeToSavedThemes(
     return null;
   }
 }
+
+// ==================== PLANEJAMENTO DE PREGAÇÕES (REAL-TIME SYNC + TOMBSTONES) ====================
+
+export enum PreachingFirestoreOperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+function logStructuredPlanFirestoreError(
+  error: unknown,
+  operationType: PreachingFirestoreOperationType,
+  path: string | null
+): void {
+  const errObj = error as { code?: string; message?: string };
+  const errInfo = {
+    error: errObj?.message || (error instanceof Error ? error.message : String(error)),
+    operationType,
+    path,
+    authInfo: {
+      userId: FIXED_PASTORAL_UID,
+      email: 'meguikalan@gmail.com',
+      emailVerified: true,
+    },
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  notifyFirestoreError({
+    code: errObj?.code || `firestore/${operationType}-error`,
+    message: errInfo.error,
+    path: path || undefined,
+    timestamp: Date.now(),
+  });
+}
+
+export async function testPreachingPlanConnection(): Promise<void> {
+  if (!db) return;
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.warn('[Firestore] Cliente offline ao verificar conexão.');
+    }
+  }
+}
+
+export function getDeletedPreachingPlanIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_DELETED_PLANS_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function markPreachingPlanAsDeleted(planId: string): void {
+  if (!planId) return;
+  try {
+    const set = getDeletedPreachingPlanIds();
+    set.add(planId);
+    localStorage.setItem(LOCAL_STORAGE_DELETED_PLANS_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+}
+
+export function unmarkPreachingPlanAsDeleted(planId: string): void {
+  if (!planId) return;
+  try {
+    const set = getDeletedPreachingPlanIds();
+    if (set.has(planId)) {
+      set.delete(planId);
+      localStorage.setItem(LOCAL_STORAGE_DELETED_PLANS_KEY, JSON.stringify(Array.from(set)));
+    }
+  } catch {}
+}
+
+function sanitizePreachingPlanPayload(plan: PreachingPlan, uid: string): PreachingPlan {
+  const safeId = (plan.id || `plan_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+  const rawDate = (plan.date || '').trim();
+  const safeDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+    ? rawDate
+    : new Date().toISOString().slice(0, 10);
+  const safeStatus: PreachingPlanStatus = PREACHING_PLAN_STATUSES.includes(plan.status)
+    ? plan.status
+    : 'Planejado';
+  const safeServiceType = (plan.serviceType || PREACHING_SERVICE_TYPES[0]).trim().slice(0, 80) || PREACHING_SERVICE_TYPES[0];
+  const safePreacher = (plan.preacher || '').trim().slice(0, 120);
+
+  const payload: PreachingPlan = {
+    id: safeId,
+    userId: uid,
+    date: safeDate,
+    serviceType: safeServiceType,
+    preacher: safePreacher,
+    status: safeStatus,
+    createdAt: Number(plan.createdAt) || Date.now(),
+    updatedAt: Number(plan.updatedAt) || Date.now(),
+  };
+
+  if (plan.scripture && plan.scripture.trim()) {
+    payload.scripture = plan.scripture.trim().slice(0, 180);
+  }
+  if (plan.themeOrTitle && plan.themeOrTitle.trim()) {
+    payload.themeOrTitle = plan.themeOrTitle.trim().slice(0, 200);
+  }
+  if (plan.seriesName && plan.seriesName.trim()) {
+    payload.seriesName = plan.seriesName.trim().slice(0, 140);
+  }
+  if (plan.linkedSermonId && plan.linkedSermonId.trim()) {
+    payload.linkedSermonId = plan.linkedSermonId.trim().slice(0, 128);
+  }
+  if (plan.linkedSermonTitle && plan.linkedSermonTitle.trim()) {
+    payload.linkedSermonTitle = plan.linkedSermonTitle.trim().slice(0, 200);
+  }
+  if (plan.notes && plan.notes.trim()) {
+    payload.notes = plan.notes.trim().slice(0, 2000);
+  }
+
+  return cleanUndefinedRecursively(payload);
+}
+
+export function smartMergePreachingPlans(
+  localPlans: PreachingPlan[],
+  cloudPlans: PreachingPlan[],
+  deletedIdsOverride?: Set<string>
+): PreachingPlan[] {
+  const deletedIds = deletedIdsOverride || getDeletedPreachingPlanIds();
+  const map = new Map<string, PreachingPlan>();
+
+  for (const localPlan of localPlans) {
+    if (!localPlan || !localPlan.id || deletedIds.has(localPlan.id)) continue;
+    map.set(localPlan.id, localPlan);
+  }
+
+  for (const cloudPlan of cloudPlans) {
+    if (!cloudPlan || !cloudPlan.id || deletedIds.has(cloudPlan.id)) continue;
+    const existing = map.get(cloudPlan.id);
+    if (!existing) {
+      map.set(cloudPlan.id, cloudPlan);
+    } else {
+      const localTs = existing.updatedAt || existing.createdAt || 0;
+      const cloudTs = cloudPlan.updatedAt || cloudPlan.createdAt || 0;
+      if (cloudTs > localTs) {
+        map.set(cloudPlan.id, cloudPlan);
+      }
+    }
+  }
+
+  const merged = Array.from(map.values());
+  merged.sort((a, b) => a.date.localeCompare(b.date) || (a.createdAt || 0) - (b.createdAt || 0));
+  return merged;
+}
+
+export function arePreachingPlanListsEqual(listA: PreachingPlan[], listB: PreachingPlan[]): boolean {
+  if (listA === listB) return true;
+  if (!listA || !listB || listA.length !== listB.length) return false;
+  for (let i = 0; i < listA.length; i++) {
+    const a = listA[i];
+    const b = listB[i];
+    if (
+      a.id !== b.id ||
+      a.date !== b.date ||
+      a.serviceType !== b.serviceType ||
+      a.status !== b.status ||
+      a.preacher !== b.preacher ||
+      (a.scripture || '') !== (b.scripture || '') ||
+      (a.themeOrTitle || '') !== (b.themeOrTitle || '') ||
+      (a.seriesName || '') !== (b.seriesName || '') ||
+      (a.linkedSermonId || '') !== (b.linkedSermonId || '') ||
+      (a.notes || '') !== (b.notes || '') ||
+      (a.updatedAt || 0) !== (b.updatedAt || 0)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export async function savePreachingPlanToCloud(plan: PreachingPlan, userId?: string): Promise<boolean> {
+  if (!db || !plan) return false;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return false;
+
+  const payload = sanitizePreachingPlanPayload(plan, uid);
+  const targetPath = `users/${uid}/${PREACHING_PLANS_COLLECTION}/${payload.id}`;
+
+  try {
+    unmarkPreachingPlanAsDeleted(payload.id);
+    await setDoc(doc(db, 'users', uid, PREACHING_PLANS_COLLECTION, payload.id), payload);
+    try {
+      await deleteDoc(doc(db, 'users', uid, TOMBSTONES_COLLECTION, `plan_${payload.id}`));
+    } catch {}
+    setLastFirestoreError(null);
+    recordSyncLog('upload', `Planejamento salvo na nuvem: ${payload.date} (${payload.serviceType})`, `ID: ${payload.id}`);
+    return true;
+  } catch (err: unknown) {
+    logStructuredPlanFirestoreError(err, PreachingFirestoreOperationType.WRITE, targetPath);
+    recordSyncLog('error', `Falha ao salvar planejamento no Firestore: ${targetPath}`);
+    return false;
+  }
+}
+
+export async function deletePreachingPlanFromCloud(planId: string, userId?: string): Promise<boolean> {
+  if (!planId) return false;
+  markPreachingPlanAsDeleted(planId);
+  if (!db) return true;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return true;
+
+  const targetPath = `users/${uid}/${PREACHING_PLANS_COLLECTION}/${planId}`;
+  try {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'users', uid, PREACHING_PLANS_COLLECTION, planId));
+    batch.set(doc(db, 'users', uid, TOMBSTONES_COLLECTION, `plan_${planId}`), {
+      id: planId,
+      entityType: 'preaching_plan',
+      deletedAt: Date.now()
+    });
+    await batch.commit();
+    setLastFirestoreError(null);
+    recordSyncLog('delete', `Planejamento removido de todos os dispositivos`, `ID: ${planId}`);
+    return true;
+  } catch (err: unknown) {
+    logStructuredPlanFirestoreError(err, PreachingFirestoreOperationType.DELETE, targetPath);
+    return false;
+  }
+}
+
+export async function syncAllLocalPreachingPlansToCloud(
+  plans: PreachingPlan[],
+  userId?: string
+): Promise<{ syncedCount: number; cloudPlans: PreachingPlan[] }> {
+  if (!db) return { syncedCount: 0, cloudPlans: [] };
+  const uid = getEffectiveUid(userId);
+  if (!uid) return { syncedCount: 0, cloudPlans: [] };
+
+  const targetPath = `users/${uid}/${PREACHING_PLANS_COLLECTION}`;
+  try {
+    const [plansSnap, tombSnap] = await Promise.all([
+      getDocs(collection(db, 'users', uid, PREACHING_PLANS_COLLECTION)),
+      getDocs(collection(db, 'users', uid, TOMBSTONES_COLLECTION))
+    ]);
+
+    const deletedIds = getDeletedPreachingPlanIds();
+    tombSnap.forEach(d => {
+      const data = d.data() as { id?: string; entityType?: string };
+      if (d.id.startsWith('plan_') || data?.entityType === 'preaching_plan') {
+        deletedIds.add(data?.id || d.id.replace(/^plan_/, ''));
+      }
+    });
+    try {
+      localStorage.setItem(LOCAL_STORAGE_DELETED_PLANS_KEY, JSON.stringify(Array.from(deletedIds)));
+    } catch {}
+
+    const cloudPlans: PreachingPlan[] = [];
+    const cloudTimestamps = new Map<string, number>();
+    plansSnap.forEach(d => {
+      const data = d.data() as PreachingPlan;
+      const planId = data?.id || d.id;
+      if (data && data.date && !deletedIds.has(planId)) {
+        cloudPlans.push({ ...data, id: planId });
+        cloudTimestamps.set(planId, Number(data.updatedAt || data.createdAt || 0));
+      }
+    });
+
+    const toUpload = (plans || []).filter(p => {
+      if (!p || !p.id || deletedIds.has(p.id)) return false;
+      const cloudTs = cloudTimestamps.get(p.id);
+      return cloudTs === undefined || (p.updatedAt || p.createdAt || 0) > cloudTs;
+    });
+
+    if (toUpload.length > 0) {
+      const batch = writeBatch(db);
+      for (const plan of toUpload) {
+        const payload = sanitizePreachingPlanPayload(plan, uid);
+        batch.set(doc(db, 'users', uid, PREACHING_PLANS_COLLECTION, payload.id), payload);
+      }
+      await batch.commit();
+      recordSyncLog('upload', `${toUpload.length} planejamento(s) sincronizado(s) para a nuvem`);
+    }
+
+    setLastFirestoreError(null);
+    return { syncedCount: toUpload.length, cloudPlans };
+  } catch (err: unknown) {
+    logStructuredPlanFirestoreError(err, PreachingFirestoreOperationType.LIST, targetPath);
+    return { syncedCount: 0, cloudPlans: [] };
+  }
+}
+
+export function subscribeToPreachingPlans(
+  userId: string | undefined,
+  onUpdate: (plans: PreachingPlan[], deletedPlanIds: Set<string>) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe | null {
+  if (!db) return null;
+  const uid = getEffectiveUid(userId);
+  if (!uid) return null;
+
+  const targetPath = `users/${uid}/${PREACHING_PLANS_COLLECTION}`;
+  try {
+    const cloudMap = new Map<string, PreachingPlan>();
+    const tombstones = new Set<string>(getDeletedPreachingPlanIds());
+
+    const emit = () => {
+      const list = Array.from(cloudMap.values()).filter(item => item.id && !tombstones.has(item.id));
+      list.sort((a, b) => a.date.localeCompare(b.date) || (a.createdAt || 0) - (b.createdAt || 0));
+      onUpdate(list, new Set(tombstones));
+    };
+
+    const unsubTomb = onSnapshot(
+      collection(db, 'users', uid, TOMBSTONES_COLLECTION),
+      (snap) => {
+        const localDeleted = getDeletedPreachingPlanIds();
+        tombstones.clear();
+        localDeleted.forEach(id => tombstones.add(id));
+        snap.forEach(d => {
+          const data = d.data() as { id?: string; entityType?: string };
+          if (d.id.startsWith('plan_') || data?.entityType === 'preaching_plan') {
+            tombstones.add(data?.id || d.id.replace(/^plan_/, ''));
+          }
+        });
+        try {
+          localStorage.setItem(LOCAL_STORAGE_DELETED_PLANS_KEY, JSON.stringify(Array.from(tombstones)));
+        } catch {}
+        emit();
+      },
+      (err) => {
+        console.warn('[Firestore Plans Tombstones Listener]:', err);
+      }
+    );
+
+    const unsubPlans = onSnapshot(
+      collection(db, 'users', uid, PREACHING_PLANS_COLLECTION),
+      (snap) => {
+        cloudMap.clear();
+        snap.forEach(d => {
+          const data = d.data() as PreachingPlan;
+          const planId = data?.id || d.id;
+          if (data && data.date && !tombstones.has(planId)) {
+            cloudMap.set(planId, { ...data, id: planId });
+          }
+        });
+        setLastFirestoreError(null);
+        recordSyncLog('realtime', `Planejamento sincronizado (${cloudMap.size} registro(s))`, `UID: ${uid}`);
+        emit();
+      },
+      (err) => {
+        logStructuredPlanFirestoreError(err, PreachingFirestoreOperationType.LIST, targetPath);
+        if (onError) onError(err);
+      }
+    );
+
+    return () => {
+      try { unsubTomb(); unsubPlans(); } catch {}
+    };
+  } catch (err) {
+    if (onError) onError(err);
+    return null;
+  }
+}
+
 

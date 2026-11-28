@@ -1,4 +1,4 @@
-import { Sermon, VisualIllustration } from '../types';
+import { Sermon, VisualIllustration, PreachingPlan } from '../types';
 import { 
   smartMergeSermons, 
   areSermonListsEqual,
@@ -14,7 +14,9 @@ import {
   saveIllustrationToCloud,
   deleteIllustrationFromCloud,
   fetchIllustrationsFromCloud,
-  syncAllLocalIllustrationsToCloud
+  syncAllLocalIllustrationsToCloud,
+  smartMergePreachingPlans,
+  getDeletedPreachingPlanIds
 } from './sermonStorage';
 import type { Unsubscribe } from '../firebase';
 
@@ -25,16 +27,23 @@ export interface DeviceSyncPackage {
   deviceInfo?: string;
   sermons: Sermon[];
   illustrations: VisualIllustration[];
+  preachingPlans?: PreachingPlan[];
   deletedSermonIds?: string[];
+  deletedPlanIds?: string[];
 }
 
 /**
  * Creates a compact Base64 sync code containing the full sermon library and visual illustrations.
  */
-export function createSyncCode(sermons: Sermon[], illustrations: VisualIllustration[]): string {
+export function createSyncCode(
+  sermons: Sermon[],
+  illustrations: VisualIllustration[],
+  preachingPlans: PreachingPlan[] = []
+): string {
   const cleanSermons = (sermons || []).filter(s => !isSermonBlank(s));
   const cleanIllustrations = illustrations || [];
   const deletedIds = Array.from(getDeletedSermonIds());
+  const deletedPlanIds = Array.from(getDeletedPreachingPlanIds());
 
   const pkg: DeviceSyncPackage = {
     version: 1,
@@ -45,7 +54,9 @@ export function createSyncCode(sermons: Sermon[], illustrations: VisualIllustrat
       : 'Dispositivo Web',
     sermons: cleanSermons,
     illustrations: cleanIllustrations,
-    deletedSermonIds: deletedIds
+    preachingPlans: preachingPlans || [],
+    deletedSermonIds: deletedIds,
+    deletedPlanIds
   };
 
   const jsonString = JSON.stringify(pkg);
@@ -87,12 +98,15 @@ export function parseSyncCode(code: string): DeviceSyncPackage {
 export function mergeSyncPackage(
   pkg: DeviceSyncPackage,
   currentSermons: Sermon[],
-  currentIllustrations: VisualIllustration[]
+  currentIllustrations: VisualIllustration[],
+  currentPlans: PreachingPlan[] = []
 ): {
   mergedSermons: Sermon[];
   mergedIllustrations: VisualIllustration[];
+  mergedPlans: PreachingPlan[];
   sermonsAddedCount: number;
   illustrationsAddedCount: number;
+  plansAddedCount: number;
 } {
   // 1. Merge sermons using smartMergeSermons
   const mergedSermons = smartMergeSermons(currentSermons, pkg.sermons);
@@ -121,18 +135,28 @@ export function mergeSyncPackage(
   });
 
   const mergedIllustrations = Array.from(illMap.values());
+  const mergedPlans = smartMergePreachingPlans(currentPlans, pkg.preachingPlans || []);
+  const currentPlanIds = new Set(currentPlans.map(p => p.id));
+  const plansAddedCount = mergedPlans.filter(p => !currentPlanIds.has(p.id)).length;
+
   return {
     mergedSermons,
     mergedIllustrations,
+    mergedPlans,
     sermonsAddedCount,
-    illustrationsAddedCount
+    illustrationsAddedCount,
+    plansAddedCount
   };
 }
 
 /**
  * Exports a full backup file in formatted JSON.
  */
-export function exportBackupJSON(sermons: Sermon[], illustrations: VisualIllustration[]): void {
+export function exportBackupJSON(
+  sermons: Sermon[],
+  illustrations: VisualIllustration[],
+  preachingPlans: PreachingPlan[] = []
+): void {
   const pkg: DeviceSyncPackage = {
     version: 1,
     appId: 'estudio-homiletico',
@@ -140,7 +164,9 @@ export function exportBackupJSON(sermons: Sermon[], illustrations: VisualIllustr
     deviceInfo: typeof navigator !== 'undefined' ? navigator.userAgent : 'Web',
     sermons: sermons.filter(s => !isSermonBlank(s)),
     illustrations: illustrations || [],
-    deletedSermonIds: Array.from(getDeletedSermonIds())
+    preachingPlans: preachingPlans || [],
+    deletedSermonIds: Array.from(getDeletedSermonIds()),
+    deletedPlanIds: Array.from(getDeletedPreachingPlanIds())
   };
   const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);

@@ -2723,8 +2723,10 @@ export const DerivedSermonPopup: React.FC<DerivedSermonPopupProps> = ({
               type="button"
               onClick={() => onOpenPulpit(sermon)}
               className="px-3 py-2 rounded-lg text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-colors flex items-center gap-1.5 cursor-pointer"
+              title="Abrir versão derivada em tela cheia no Modo Púlpito"
             >
-              <span>📖 Modo Púlpito</span>
+              <BookOpen className="w-3.5 h-3.5 text-amber-700" />
+              <span>Modo Púlpito</span>
             </button>
 
             <button

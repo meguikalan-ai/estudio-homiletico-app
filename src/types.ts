@@ -328,3 +328,22 @@ export interface SermonDerivationDraftMeta {
   audience: string;
 }
 
+export type PreachingPlanStatus = 'Planejado' | 'Em preparo' | 'Pronto' | 'Pregado';
+
+export interface PreachingPlan {
+  id: string;
+  userId?: string;
+  date: string; // YYYY-MM-DD
+  serviceType: string;
+  scripture?: string;
+  themeOrTitle?: string;
+  seriesName?: string;
+  preacher: string;
+  status: PreachingPlanStatus;
+  linkedSermonId?: string;
+  linkedSermonTitle?: string;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+

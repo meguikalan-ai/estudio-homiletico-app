@@ -132,6 +132,28 @@
         "updatedAt": { "type": "number" }
       },
       "required": ["id", "title", "scripture", "approach", "category", "summary", "application", "isGenerated", "createdAt", "sourceMode"]
+    },
+    "PreachingPlan": {
+      "title": "PreachingPlan",
+      "description": "Preaching planning calendar entry synchronized across devices.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "serviceType": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "scripture": { "type": "string", "maxLength": 180 },
+        "themeOrTitle": { "type": "string", "maxLength": 200 },
+        "seriesName": { "type": "string", "maxLength": 140 },
+        "preacher": { "type": "string", "maxLength": 120 },
+        "status": { "type": "string", "enum": ["Planejado", "Em preparo", "Pronto", "Pregado"] },
+        "linkedSermonId": { "type": "string", "maxLength": 128 },
+        "linkedSermonTitle": { "type": "string", "maxLength": 200 },
+        "notes": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "date", "serviceType", "preacher", "status", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -166,6 +188,10 @@
     "/users/{uid}/biblical_themes/{themeId}": {
       "schema": "GeneratedHomileticTheme",
       "description": "User-scoped generated and saved biblical homiletic themes synchronized across devices."
+    },
+    "/users/{uid}/preaching_plans/{planId}": {
+      "schema": "PreachingPlan",
+      "description": "User-scoped preaching planning entries synchronized across devices."
     },
     "/users/{uid}/tombstones/{tombstoneId}": {
       "schema": "Tombstone",

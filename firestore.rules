@@ -40,6 +40,24 @@ service cloud.firestore {
         && (!('outlineHints' in data) || (data.outlineHints is list && data.outlineHints.size() <= 8 && (data.outlineHints.size() == 0 || data.outlineHints[0] is string)));
     }
 
+    function isValidPreachingPlan(data, uid, planId) {
+      return data.keys().hasAll(['id', 'date', 'serviceType', 'preacher', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'date', 'serviceType', 'scripture', 'themeOrTitle', 'seriesName', 'preacher', 'status', 'linkedSermonId', 'linkedSermonTitle', 'notes', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id == planId && data.id.size() <= 128
+        && data.date is string && data.date.size() == 10 && data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && data.serviceType is string && data.serviceType.size() >= 1 && data.serviceType.size() <= 80
+        && data.preacher is string && data.preacher.size() <= 120
+        && data.status in ['Planejado', 'Em preparo', 'Pronto', 'Pregado']
+        && data.createdAt is number && data.updatedAt is number
+        && (!('userId' in data) || (data.userId is string && data.userId == uid))
+        && (!('scripture' in data) || (data.scripture is string && data.scripture.size() <= 180))
+        && (!('themeOrTitle' in data) || (data.themeOrTitle is string && data.themeOrTitle.size() <= 200))
+        && (!('seriesName' in data) || (data.seriesName is string && data.seriesName.size() <= 140))
+        && (!('linkedSermonId' in data) || (data.linkedSermonId is string && data.linkedSermonId.size() <= 128))
+        && (!('linkedSermonTitle' in data) || (data.linkedSermonTitle is string && data.linkedSermonTitle.size() <= 200))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000));
+    }
+
     // Acesso para o UID fixo pastoral (sem necessidade de login) ou via autenticação
     match /users/{uid} {
       allow read, write: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
@@ -80,6 +98,13 @@ service cloud.firestore {
         allow create, update: if (uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid))
           && isValidId(themeId)
           && isValidBiblicalTheme(request.resource.data, uid, themeId);
+      }
+
+      match /preaching_plans/{planId} {
+        allow get, list, delete: if uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid);
+        allow create, update: if (uid == '2PG5uxWMgeg3eE10yQbQVFDpHUu1' || (request.auth != null && request.auth.uid == uid))
+          && isValidId(planId)
+          && isValidPreachingPlan(request.resource.data, uid, planId);
       }
 
       match /chat_meta/{metaId} {
